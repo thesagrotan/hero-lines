@@ -21,6 +21,10 @@ uniform float u_borderThickness;
 uniform float u_speed;
 uniform float u_trailLength;
 uniform float u_ease;
+uniform vec3 u_color1;
+uniform vec3 u_color2;
+uniform vec3 u_rimColor;
+uniform float u_numLines;
 
 // Signed Distance Function for a Rounded Box
 float sdRoundBox( vec3 p, vec3 b, float r ) {
@@ -93,31 +97,35 @@ vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
 // Helper to calculate color at a specific 3D point on the surface
 vec3 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isBack) {
     // 1. LAYER MASK (Horizontal slices - Scanlines)
-    float numLayers = 30.0;
-    float yNorm = (p.y + boxSize.y) / (2.0 * boxSize.y);
-    float layerIdx = floor(yNorm * numLayers);
+    float numLayers = u_numLines;
+    float yNorm = clamp((p.y + boxSize.y) / (2.0 * boxSize.y), 0.0, 1.0);
+    float layerIdx = floor(yNorm * (numLayers - 0.0001));
     float layerCenter = (layerIdx / numLayers) * (2.0 * boxSize.y) - boxSize.y + (0.5 / numLayers) * (2.0 * boxSize.y);
     
     // Scanlines logic
-    float lineMask = 1.0 - smoothstep(thickness * 0.2, thickness, abs(p.y - layerCenter));
+    float layerSpacing = (2.0 * boxSize.y) / numLayers;
+    float actualThick = min(thickness, layerSpacing * 0.5);
+    float lineMask = 1.0 - smoothstep(actualThick * 0.2, actualThick, abs(p.y - layerCenter));
     
     // 2. TIMING
     // Project P to Box Surface for animation
     vec3 pUse = clamp(p, -boxSize, boxSize); 
+    float px = pUse.x;
+    float pz = pUse.z;
+    float bx = boxSize.x;
+    float bz = boxSize.z;
     float perimeter = 0.0;
-    float totalPerim = 4.0 * (boxSize.x + boxSize.z);
-    
-    if (pUse.z > boxSize.z - 0.1 && abs(pUse.x) < boxSize.x) { // Front
-        perimeter = (pUse.x + boxSize.x);
-    } else if (pUse.x > boxSize.x - 0.1 && abs(pUse.z) < boxSize.z) { // Right
-        perimeter = (2.0 * boxSize.x) + (boxSize.z - pUse.z);
-    } else if (pUse.z < -boxSize.z + 0.1 && abs(pUse.x) < boxSize.x) { // Back
-        perimeter = (2.0 * boxSize.x + 2.0 * boxSize.z) + (boxSize.x - pUse.x);
-    } else if (pUse.x < -boxSize.x + 0.1 && abs(pUse.z) < boxSize.z) { // Left
-        perimeter = (4.0 * boxSize.x + 2.0 * boxSize.z) + (pUse.z + boxSize.z);
+    float total = 4.0 * (bx + bz);
+
+    if (abs(pz * bx) >= abs(px * bz)) {
+        if (pz > 0.0) perimeter = bx + px; // Front
+        else perimeter = 3.0 * bx + 2.0 * bz - px; // Back
+    } else {
+        if (px > 0.0) perimeter = 2.0 * bx + bz - pz; // Right
+        else perimeter = 4.0 * bx + 3.0 * bz + pz; // Left
     }
     
-    float normPerim = perimeter / totalPerim;
+    float normPerim = perimeter / total;
 
     float speed = u_speed;
     float timeVal = time * speed;
@@ -135,6 +143,7 @@ vec3 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
         float tailFade = smoothstep(0.0, max(0.001, u_ease), t);
         float headFade = smoothstep(0.0, max(0.001, u_ease), 1.0 - t);
         isActive = tailFade * headFade;
+        isActive = pow(isActive, 1.5); // Sharpen the trails
     }
 
     // 3. WIREFRAME EDGE MASK (The "Cage")
@@ -185,25 +194,26 @@ vec3 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
     
     float wireframe = max(edgeVert, max(edgeHorzX, edgeHorzZ));
 
-    vec3 colorBlue = vec3(0.05, 0.4, 1.0);
-    vec3 colorCyan = vec3(0.3, 0.8, 1.0);
+    vec3 color1 = u_color1;
+    vec3 color2 = u_color2;
     
     // Combine masks
     // Mask out top/bottom caps for SCANLINES only
-    // Use raw coordinate for face mask to keep it sharp
-    // We want 1.0 on side faces, 0.0 on top/bottom
-    float verticalFaceMask = smoothstep(thickness * 0.5, thickness * 2.0, abs(abs(p.y) - boxSize.y));
+    // Use surface normal to detect verticality (caps)
+    vec3 n = calcNormal(p, boxSize, u_borderRadius);
+    float verticality = abs(n.y);
+    float capMask = smoothstep(0.4, 0.7, 1.0 - verticality); 
     
-    float finalAlpha = lineMask * isActive * verticalFaceMask;
+    float finalAlpha = lineMask * isActive * capMask;
     
-    vec3 lineCol = mix(colorBlue, colorCyan, isActive) * finalAlpha;
-    vec3 wireframeCol = colorBlue * 0.15 * wireframe;
+    vec3 lineCol = mix(color1, color2, isActive) * finalAlpha;
+    vec3 wireframeCol = color1 * 0.15 * wireframe;
     
     float intensity = isBack ? 1.5 : 3.0; 
     return (lineCol + wireframeCol) * intensity;
 }
 
-float hash(float n) { return fract(sin(n) * 43758.5453123); }
+float cheap_hash(float n) { return fract(sin(n) * 43758.5453123); }
 
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
@@ -238,15 +248,15 @@ void main() {
         vec3 p = vec3(0.0);
         bool hitFront = false;
         
-        // Dithering to prevent banding
-        t += hash(uv.x + uv.y * 57.0 + u_time) * 0.05;
+        // Dithering to prevent banding (Reduced intensity)
+        t += cheap_hash(uv.x + uv.y * 57.0 + u_time) * 0.01;
 
-        for(int i=0; i<64; i++) {
+        for(int i=0; i<80; i++) { // Increased iterations
             p = ro_local + rd_local * t;
             float d = map(p, u_boxSize, u_borderRadius);
-            if(d < 0.001) { hitFront = true; break; }
+            if(d < 0.0005) { hitFront = true; break; } // Tighter hit
             if(t > tMax) break;
-            t += d;
+            t += d * 0.9; // More conservative step
         }
 
         if(hitFront) {
@@ -256,7 +266,7 @@ void main() {
             // Add rim lighting
             vec3 n = calcNormal(p, u_boxSize, u_borderRadius);
             float rim = 1.0 - max(dot(-rd_local, n), 0.0);
-            finalCol += vec3(0.1, 0.4, 0.8) * pow(rim, 3.0) * 0.5;
+            finalCol += u_rimColor * pow(rim, 3.0) * 0.5;
         }
         
         // --- PASS 2: BACK FACE ---
@@ -282,12 +292,12 @@ void main() {
         bool hitBack = false;
         vec3 pBack = vec3(0.0);
         
-        for(int i=0; i<64; i++) {
+        for(int i=0; i<80; i++) { // Increased iterations
              pBack = ro_back + rd_back * t_back;
              float d = map(pBack, u_boxSize, u_borderRadius);
-             if(d < 0.001) { hitBack = true; break; }
+             if(d < 0.0005) { hitBack = true; break; } // Tighter hit
              if(t_back > tMax_back) break;
-             t_back += d;
+             t_back += d * 0.9; // More conservative step
         }
         
         if(hitBack) {
@@ -298,7 +308,7 @@ void main() {
     }
 
     // Post-processing: Add subtle bloom and grain
-    finalCol += (hash(uv.x + uv.y + u_time) - 0.5) * 0.03;
+    finalCol += (cheap_hash(uv.x + uv.y + u_time) - 0.5) * 0.03;
     
     // Clamp and output
     fragColor = vec4(finalCol, 1.0);
@@ -340,10 +350,14 @@ export default function App() {
         rotZ: { value: 0, min: -180, max: 180, step: 1, label: 'Rotate Z (deg)' },
 
         borderRadius: { value: 0.1, min: 0.0, max: 1.0, step: 0.01, label: 'Border Radius' },
+        numLines: { value: 30, min: 1, max: 100, step: 1, label: 'Line Count' },
         thickness: { value: 0.01, min: 0.001, max: 0.1, step: 0.001, label: 'Line Thickness' },
         speed: { value: 0.8, min: 0.0, max: 5.0, step: 0.1, label: 'Speed' },
         longevity: { value: 0.4, min: 0.05, max: 2.0, step: 0.05, label: 'Longevity' },
         ease: { value: 0.5, min: 0.0, max: 1.0, step: 0.1, label: 'Ease In/Out' },
+        color1: { value: '#0d66ff', label: 'Color 1' },
+        color2: { value: '#4cccff', label: 'Color 2' },
+        rimColor: { value: '#1a66cc', label: 'Rim Color' },
     })
 
     // Ref to hold current control values for the render loop
@@ -395,6 +409,10 @@ export default function App() {
         const uSpeed = gl.getUniformLocation(program, 'u_speed')
         const uTrailLength = gl.getUniformLocation(program, 'u_trailLength')
         const uEase = gl.getUniformLocation(program, 'u_ease')
+        const uColor1 = gl.getUniformLocation(program, 'u_color1')
+        const uColor2 = gl.getUniformLocation(program, 'u_color2')
+        const uRimColor = gl.getUniformLocation(program, 'u_rimColor')
+        const uNumLines = gl.getUniformLocation(program, 'u_numLines')
 
         let animationFrameId: number
 
@@ -405,7 +423,9 @@ export default function App() {
                 boxX, boxY, boxZ,
                 rotX, rotY, rotZ,
                 borderRadius, thickness,
-                speed, longevity, ease
+                speed, longevity, ease,
+                color1, color2, rimColor,
+                numLines
             } = controlsRef.current
 
             gl.uniform1f(uTime, time * 0.001)
@@ -421,6 +441,23 @@ export default function App() {
             gl.uniform1f(uSpeed, speed)
             gl.uniform1f(uTrailLength, longevity)
             gl.uniform1f(uEase, ease)
+            gl.uniform1f(uNumLines, numLines)
+
+            // Helper to parse hex color to normalized RGB
+            const hexToRgb = (hex: string) => {
+                const r = parseInt(hex.slice(1, 3), 16) / 255
+                const g = parseInt(hex.slice(3, 5), 16) / 255
+                const b = parseInt(hex.slice(5, 7), 16) / 255
+                return [r, g, b]
+            }
+
+            const c1 = hexToRgb(color1)
+            const c2 = hexToRgb(color2)
+            const cr = hexToRgb(rimColor)
+
+            gl.uniform3f(uColor1, c1[0], c1[1], c1[2])
+            gl.uniform3f(uColor2, c2[0], c2[1], c2[2])
+            gl.uniform3f(uRimColor, cr[0], cr[1], cr[2])
 
             gl.drawArrays(gl.TRIANGLES, 0, 6)
             animationFrameId = requestAnimationFrame(render)
