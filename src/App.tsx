@@ -8,6 +8,7 @@ void main() { gl_Position = position; }
 `
 
 const fsSource = `#version 300 es
+// Antialiasing Refactor v3 - Robust Edition
 precision highp float;
 
 out vec4 fragColor;
@@ -15,7 +16,7 @@ uniform vec2 u_resolution;
 uniform float u_time;
 uniform vec3 u_camPos;
 uniform vec3 u_boxSize;
-uniform vec3 u_rot; // Rotation in radians
+uniform vec3 u_rot; 
 uniform float u_borderRadius;
 uniform float u_borderThickness;
 uniform float u_speed;
@@ -26,62 +27,32 @@ uniform vec3 u_color2;
 uniform vec3 u_rimColor;
 uniform float u_numLines;
 
-// Signed Distance Function for a Rounded Box
-float sdRoundBox( vec3 p, vec3 b, float r ) {
+float sdRoundBox(vec3 p, vec3 b, float r) {
     vec3 q = abs(p) - b;
-    return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0) - r;
+    float d_out = length(max(q, 0.0));
+    float d_in = min(max(q.x, max(q.y, q.z)), 0.0);
+    return d_out + d_in - r;
 }
 
-// Scene Mapping
 float map(vec3 p, vec3 boxSize, float radius) {
-    // Effective box size for SDF (subtract radius to keep total size consistent)
-    // Ensure inner box size is not negative
-    vec3 innerSize = max(boxSize - vec3(radius), vec3(0.0));
+    vec3 innerSize = max(boxSize - vec3(radius), vec3(0.001));
     return sdRoundBox(p, innerSize, radius);
 }
 
-// Calculate Normal via finite differences
 vec3 calcNormal(vec3 p, vec3 boxSize, float radius) {
     const float h = 0.0001;
-    const vec2 k = vec2(1,-1);
-    return normalize(k.xyy*map(p + k.xyy*h, boxSize, radius) + 
-                     k.yyx*map(p + k.yyx*h, boxSize, radius) + 
-                     k.yxy*map(p + k.yxy*h, boxSize, radius) + 
-                     k.xxx*map(p + k.xxx*h, boxSize, radius));
+    const vec2 k = vec2(1.0, -1.0);
+    vec3 n = k.xyy * map(p + k.xyy * h, boxSize, radius) + 
+             k.yyx * map(p + k.yyx * h, boxSize, radius) + 
+             k.yxy * map(p + k.yxy * h, boxSize, radius) + 
+             k.xxx * map(p + k.xxx * h, boxSize, radius);
+    return normalize(n);
 }
 
-// Rotation matrices
-mat3 rotateX(float angle) {
-    float s = sin(angle);
-    float c = cos(angle);
-    return mat3(
-        1.0, 0.0, 0.0,
-        0.0, c, -s,
-        0.0, s, c
-    );
-}
+mat3 rotX(float a) { float s=sin(a), c=cos(a); return mat3(1,0,0, 0,c,-s, 0,s,c); }
+mat3 rotY(float a) { float s=sin(a), c=cos(a); return mat3(c,0,s, 0,1,0, -s,0,c); }
+mat3 rotZ(float a) { float s=sin(a), c=cos(a); return mat3(c,-s,0, s,c,0, 0,0,1); }
 
-mat3 rotateY(float angle) {
-    float s = sin(angle);
-    float c = cos(angle);
-    return mat3(
-        c, 0.0, s,
-        0.0, 1.0, 0.0,
-        -s, 0.0, c
-    );
-}
-
-mat3 rotateZ(float angle) {
-    float s = sin(angle);
-    float c = cos(angle);
-    return mat3(
-        c, -s, 0.0,
-        s, c, 0.0,
-        0.0, 0.0, 1.0
-    );
-}
-
-// Precise Box Intersection
 vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
     vec3 m = 1.0 / rd;
     vec3 n = m * ro;
@@ -90,227 +61,116 @@ vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
     vec3 t2 = -n + k;
     float tN = max(max(t1.x, t1.y), t1.z);
     float tF = min(min(t2.x, t2.y), t2.z);
-    if (tN > tF || tF < 0.0) return vec2(-1.0);
+    if (tN > tF || tF < 0.0) return vec2(-1.0, -1.0);
     return vec2(tN, tF);
 }
 
-// Helper to calculate color at a specific 3D point on the surface
 vec3 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isBack) {
-    // 1. LAYER MASK (Horizontal slices - Scanlines)
     float numLayers = u_numLines;
-    float yNorm = clamp((p.y + boxSize.y) / (2.0 * boxSize.y), 0.0, 1.0);
-    float layerIdx = floor(yNorm * (numLayers - 0.0001));
-    float layerCenter = (layerIdx / numLayers) * (2.0 * boxSize.y) - boxSize.y + (0.5 / numLayers) * (2.0 * boxSize.y);
+    float yRange = 2.0 * boxSize.y;
+    float yNorm = clamp((p.y + boxSize.y) / yRange, 0.0, 1.0);
+    float layerIdx = floor(yNorm * numLayers);
+    float layerGap = yRange / (numLayers + 0.001);
+    float layerCenter = (layerIdx + 0.5) * layerGap - boxSize.y;
     
-    // Scanlines logic
-    float layerSpacing = (2.0 * boxSize.y) / numLayers;
-    float actualThick = min(thickness, layerSpacing * 0.5);
-    float lineMask = 1.0 - smoothstep(actualThick * 0.2, actualThick, abs(p.y - layerCenter));
+    float dy = fwidth(p.y);
+    float actualThick = min(thickness, layerGap * 0.48);
+    float lineMask = 1.0 - smoothstep(actualThick - dy, actualThick + dy, abs(p.y - layerCenter));
     
-    // 2. TIMING
-    // Project P to Box Surface for animation
-    vec3 pUse = clamp(p, -boxSize, boxSize); 
-    float px = pUse.x;
-    float pz = pUse.z;
-    float bx = boxSize.x;
-    float bz = boxSize.z;
+    vec3 pUse = clamp(p, -boxSize, boxSize);
+    float px = pUse.x, pz = pUse.z;
+    float bx = boxSize.x, bz = boxSize.z;
+    
     float perimeter = 0.0;
-    float total = 4.0 * (bx + bz);
-
-    if (abs(pz * bx) >= abs(px * bz)) {
-        if (pz > 0.0) perimeter = bx + px; // Front
-        else perimeter = 3.0 * bx + 2.0 * bz - px; // Back
+    if (abs(pz * bx) > abs(px * bz)) {
+        perimeter = (pz > 0.0) ? (bx + px) : (3.0 * bx + 2.0 * bz - px);
     } else {
-        if (px > 0.0) perimeter = 2.0 * bx + bz - pz; // Right
-        else perimeter = 4.0 * bx + 3.0 * bz + pz; // Left
+        perimeter = (px > 0.0) ? (2.0 * bx + bz - pz) : (4.0 * bx + 3.0 * bz + pz);
     }
     
-    float normPerim = perimeter / total;
-
-    float speed = u_speed;
-    float timeVal = time * speed;
-    float layerDelay = layerIdx * 0.015; 
-    
-    float progress = mod(timeVal - layerDelay, 3.0);
-    float segmentLen = u_trailLength;
-    
-    // Calculate distance from the "head" of the trail
-    float dist = fract(progress - normPerim);
+    float total = 4.0 * (bx + bz);
+    float progress = mod(time * u_speed - layerIdx * 0.02, 3.0);
+    float dist = fract(progress - (perimeter / (total + 0.001)));
     
     float isActive = 0.0;
-    if (dist < segmentLen) {
-        float t = 1.0 - (dist / segmentLen);
-        float tailFade = smoothstep(0.0, max(0.001, u_ease), t);
-        float headFade = smoothstep(0.0, max(0.001, u_ease), 1.0 - t);
-        isActive = tailFade * headFade;
-        isActive = pow(isActive, 1.5); // Sharpen the trails
+    if (dist < u_trailLength) {
+        float t = 1.0 - (dist / u_trailLength);
+        float fade = smoothstep(0.0, max(0.01, u_ease), t) * smoothstep(0.0, max(0.01, u_ease), 1.0 - t);
+        isActive = pow(fade, 1.5);
     }
 
-    // 3. WIREFRAME EDGE MASK (The "Cage")
-    // Detect if we are near ANY edge (12 edges)
-    // Edge proximity means at least 2 components of |p| are near boxSize
-    // Threshold is thickness.
-    // Normalized distance from center (0 to 1 relative to boxSize)
-    vec3 distFromCenter = abs(p);
-    vec3 edgeDist = boxSize - distFromCenter;
-    // We want to detect if edgeDist < thickness * 4.0
-    vec3 isNearEdge = step(edgeDist, vec3(thickness * 4.0));
-    // If sum is >= 2, we are near an edge (or corner)
-    float nearEdgeCount = isNearEdge.x + isNearEdge.y + isNearEdge.z;
-    float wireframeMask = step(2.0, nearEdgeCount);
-    
-    // Smooth the wireframe
-    // Let's use smoothstep for soft edges
-    // Find separation from edge
-    // For Top-Right edge (Y near boxY, X near boxX): min(edgeDist.x, edgeDist.y)
-    // We need minimum of the two smallest distances? No, max of proximity?
-    // Let's stick to the simpler max-logic from before but generalize
-    // max(proximityX, proximityY) for Z-aligned edge.
-    // General solution: 2nd largest component of proximity?
-    // Let's use a simpler union of 3 specific edge types:
-    // Vertical Edges (Corner pillars): max(proximityX, proximityZ)
-    // Horizontal X Edges: max(proximityY, proximityZ)
-    // Horizontal Z Edges: max(proximityX, proximityY)
-    
-    // Proximity = 1.0 if dist=0, 0.0 if dist=thick checks...
-    // Let's invert: Distance from edge.
-    // Vert dist = max(distToCorner.x, distToCorner.z) ... wait, this was my previous logic!
-    // distToCorner was abs(|p.xz| - boxSize.xz).
-    // Let's reuse that robust logic.
-    vec3 d = abs(abs(p) - boxSize); // Distance to face planes
-    // If d.x < small and d.z < small -> Vertical Edge
-    // We want mask = 1 when d is small.
-    // So measure proximity = 1.0 - smoothstep(small, large, d).
-    vec3 proxim = vec3(
-        1.0 - smoothstep(thickness, thickness * 4.0, d.x),
-        1.0 - smoothstep(thickness, thickness * 4.0, d.y),
-        1.0 - smoothstep(thickness, thickness * 4.0, d.z)
-    );
-    
-    // Combine proximities:
-    float edgeVert = proxim.x * proxim.z; // Near X-face AND Z-face
-    float edgeHorzX = proxim.y * proxim.z; // Near Y-face AND Z-face
-    float edgeHorzZ = proxim.x * proxim.y; // Near X-face AND Y-face
-    
-    float wireframe = max(edgeVert, max(edgeHorzX, edgeHorzZ));
+    vec3 fw_p = fwidth(p);
+    vec3 dEdge = abs(abs(p) - boxSize);
+    float edgeW = thickness * 2.5;
+    vec3 proxim = 1.0 - smoothstep(edgeW - fw_p, edgeW + fw_p, dEdge);
+    // Explicit component access to avoid swizzling issues
+    float wX = proxim.x; float wY = proxim.y; float wZ = proxim.z;
+    float wireframe = max(wX * wZ, max(wY * wZ, wX * wY));
 
-    vec3 color1 = u_color1;
-    vec3 color2 = u_color2;
-    
-    // Combine masks
-    // Mask out top/bottom caps for SCANLINES only
-    // Use surface normal to detect verticality (caps)
     vec3 n = calcNormal(p, boxSize, u_borderRadius);
-    float verticality = abs(n.y);
-    float capMask = smoothstep(0.4, 0.7, 1.0 - verticality); 
+    float capMask = smoothstep(0.1, 0.4, 1.0 - abs(n.y));
     
-    float finalAlpha = lineMask * isActive * capMask;
+    float alpha = lineMask * isActive * capMask;
+    vec3 col = mix(u_color1, u_color2, isActive) * alpha;
+    vec3 wire = u_color1 * 0.1 * wireframe;
     
-    vec3 lineCol = mix(color1, color2, isActive) * finalAlpha;
-    vec3 wireframeCol = color1 * 0.15 * wireframe;
-    
-    float intensity = isBack ? 1.5 : 3.0; 
-    return (lineCol + wireframeCol) * intensity;
+    float intensity = isBack ? 1.0 : 2.5;
+    return (col + wire) * intensity;
 }
 
 float cheap_hash(float n) { return fract(sin(n) * 43758.5453123); }
 
 void main() {
-    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
-    vec3 ro = u_camPos;
-    vec3 target = vec3(0.0, 0.0, 0.0);
-    vec3 fwd = normalize(target - ro);
+    vec2 res = u_resolution;
+    vec2 uv = (gl_FragCoord.xy - 0.5 * res) / res.y;
+    
+    mat3 mR = rotZ(u_rot.z) * rotY(u_rot.y) * rotX(u_rot.x);
+    mat3 mI = transpose(mR);
+    
+    vec3 ro_l = mI * u_camPos;
+    vec3 fwd = normalize(mI * -u_camPos);
     vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), fwd));
     vec3 up = cross(fwd, right);
     vec3 rd = normalize(fwd + uv.x * right + uv.y * up);
 
+    vec2 tBox = intersectBox(ro_l, rd, u_boxSize);
     vec3 finalCol = vec3(0.0);
 
-    // Apply rotation to the ray (Inverse rotation of the object)
-    mat3 rotMat = rotateZ(u_rot.z) * rotateY(u_rot.y) * rotateX(u_rot.x);
-    mat3 invRot = transpose(rotMat);
-
-    vec3 ro_local = invRot * ro;
-    vec3 rd_local = invRot * rd;
-    
-    // 1. Analytic Bounding Box Intersection
-    // Gives us a robust start/end point for raymarching
-    // and significantly improves performance (empty space skipping)
-    vec2 tBox = intersectBox(ro_local, rd_local, u_boxSize);
-
-    if(tBox.x > 0.0) {
-        // We hit the bounding box. Now march to find the rounded surface.
-        
-        // --- PASS 1: FRONT FACE ---
-        float t = tBox.x; // Start at bounding box entry
-        float tMax = tBox.y; // Don't go past exit
-        
-        vec3 p = vec3(0.0);
-        bool hitFront = false;
-        
-        // Dithering to prevent banding (Reduced intensity)
-        t += cheap_hash(uv.x + uv.y * 57.0 + u_time) * 0.01;
-
-        for(int i=0; i<80; i++) { // Increased iterations
-            p = ro_local + rd_local * t;
+    if (tBox.x > 0.0) {
+        float t = tBox.x;
+        bool hit = false;
+        vec3 p;
+        for(int i=0; i<64; i++) {
+            p = ro_l + rd * t;
             float d = map(p, u_boxSize, u_borderRadius);
-            if(d < 0.0005) { hitFront = true; break; } // Tighter hit
-            if(t > tMax) break;
-            t += d * 0.9; // More conservative step
+            if(d < 0.001) { hit = true; break; }
+            t += d;
+            if(t > tBox.y) break;
         }
-
-        if(hitFront) {
-            vec3 colFront = getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, false);
-            finalCol += colFront;
-            
-            // Add rim lighting
+        if(hit) {
+            finalCol += getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, false);
             vec3 n = calcNormal(p, u_boxSize, u_borderRadius);
-            float rim = 1.0 - max(dot(-rd_local, n), 0.0);
-            finalCol += u_rimColor * pow(rim, 3.0) * 0.5;
+            float rim = pow(1.0 - max(dot(-rd, n), 0.0), 3.0);
+            finalCol += u_rimColor * rim * 0.4;
         }
         
-        // --- PASS 2: BACK FACE ---
-        // To find back face, we can Raymarch BACKWARDS from the exit point (tBox.y)
-        // toward the camera. Distance field is absolute, so we just move towards surface.
-        
-        t = tBox.y; // Start at bounding box exit
-        // We march backwards along the ray: p -= rd * d ?
-        // Or rather, we are at param t, decreasing t.
-        // We want to find smallest t (closest to tBox.y) where d=0.
-        // But standard raymarch moves forward.
-        // Let's define a new ray starting at exit point, pointing towards entry.
-        // ro_back = ro + rd * tBox.y;
-        // rd_back = -rd;
-        
-        vec3 ro_back = ro_local + rd_local * tBox.y;
-        vec3 rd_back = -rd_local;
-        
-        float t_back = 0.0;
-        // Max distance to check is length of box diagonal ~ ish
-        float tMax_back = tBox.y - tBox.x; // Distance inside box
-        
-        bool hitBack = false;
-        vec3 pBack = vec3(0.0);
-        
-        for(int i=0; i<80; i++) { // Increased iterations
-             pBack = ro_back + rd_back * t_back;
-             float d = map(pBack, u_boxSize, u_borderRadius);
-             if(d < 0.0005) { hitBack = true; break; } // Tighter hit
-             if(t_back > tMax_back) break;
-             t_back += d * 0.9; // More conservative step
+        vec3 ro_b = ro_l + rd * tBox.y;
+        vec3 rd_b = -rd;
+        float tb = 0.0;
+        hit = false;
+        for(int i=0; i<64; i++) {
+             p = ro_b + rd_b * tb;
+             float d = map(p, u_boxSize, u_borderRadius);
+             if(d < 0.001) { hit = true; break; }
+             tb += d;
+             if(tb > (tBox.y - tBox.x)) break;
         }
-        
-        if(hitBack) {
-            // pBack is the surface point on the back side
-            vec3 colBack = getSurfaceColor(pBack, u_boxSize, u_time, u_borderThickness, true);
-            finalCol += colBack * 0.6; // Scale down brightness for back face
+        if(hit) {
+             finalCol += getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, true) * 0.5;
         }
     }
 
-    // Post-processing: Add subtle bloom and grain
-    finalCol += (cheap_hash(uv.x + uv.y + u_time) - 0.5) * 0.03;
-    
-    // Clamp and output
+    finalCol += (cheap_hash(uv.x + uv.y + u_time) - 0.5) * 0.02;
     fragColor = vec4(finalCol, 1.0);
 }
 `
