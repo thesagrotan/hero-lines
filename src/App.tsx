@@ -26,6 +26,32 @@ uniform vec3 u_color1;
 uniform vec3 u_color2;
 uniform vec3 u_rimColor;
 uniform float u_numLines;
+uniform int u_shapeType; // 0: Box, 1: Sphere, 2: Cone
+
+float sdSphere(vec3 p, float s) {
+    return length(p) - s;
+}
+
+float sdCone(vec3 p, vec2 c, float h) {
+    float q = length(p.xz);
+    return max(dot(c.xy, vec2(q, p.y)), -h - p.y);
+}
+
+float sdTorus(vec3 p, vec2 t) {
+    vec2 q = vec2(length(p.xz) - t.x, p.y);
+    return length(q) - t.y;
+}
+
+float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
+    vec3 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h) - r;
+}
+
+float sdCylinder(vec3 p, vec2 h) {
+    vec2 d = abs(vec2(length(p.xz), p.y)) - h;
+    return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+}
 
 float sdRoundBox(vec3 p, vec3 b, float r) {
     vec3 q = abs(p) - b;
@@ -35,6 +61,17 @@ float sdRoundBox(vec3 p, vec3 b, float r) {
 }
 
 float map(vec3 p, vec3 boxSize, float radius) {
+    if (u_shapeType == 1) {
+        return sdSphere(p, boxSize.y);
+    } else if (u_shapeType == 2) {
+        return sdCone(p, vec2(0.5, 0.5), boxSize.y);
+    } else if (u_shapeType == 3) {
+        return sdTorus(p, vec2(boxSize.x, boxSize.y * 0.4));
+    } else if (u_shapeType == 4) {
+        return sdCapsule(p, vec3(0, -boxSize.y, 0), vec3(0, boxSize.y, 0), boxSize.x * 0.5);
+    } else if (u_shapeType == 5) {
+        return sdCylinder(p, vec2(boxSize.x, boxSize.y));
+    }
     vec3 innerSize = max(boxSize - vec3(radius), vec3(0.001));
     return sdRoundBox(p, innerSize, radius);
 }
@@ -112,7 +149,12 @@ vec3 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
     
     float alpha = lineMask * isActive * capMask;
     vec3 col = mix(u_color1, u_color2, isActive) * alpha;
-    vec3 wire = u_color1 * 0.1 * wireframe;
+    
+    // Wireframe only for box for now, or adapted
+    vec3 wire = vec3(0.0);
+    if (u_shapeType == 0) {
+        wire = u_color1 * 0.1 * wireframe;
+    }
     
     float intensity = isBack ? 1.0 : 2.5;
     return (col + wire) * intensity;
@@ -190,6 +232,7 @@ function createShader(gl: WebGL2RenderingContext, type: number, source: string) 
 
 export default function App() {
     const canvasRef = useRef<HTMLCanvasElement>(null)
+    const fpsRef = useRef<HTMLDivElement>(null)
 
     // Leva controls
     const controls = useControls({
@@ -199,7 +242,7 @@ export default function App() {
         },
         camX: { value: 5.0, min: -10, max: 10, step: 0.1, label: 'Cam X' },
         camY: { value: 4.5, min: -10, max: 10, step: 0.1, label: 'Cam Y' },
-        camZ: { value: 8.0, min: 2, max: 20, step: 0.1, label: 'Cam Z' },
+        camZ: { value: 8.0, min: 0.1, max: 20, step: 0.1, label: 'Cam Z' },
 
         boxX: { value: 1.5, min: 0.1, max: 4, step: 0.05, label: 'Width (X)' },
         boxY: { value: 1.0, min: 0.1, max: 4, step: 0.05, label: 'Height (Y)' },
@@ -218,6 +261,11 @@ export default function App() {
         color1: { value: '#0d66ff', label: 'Color 1' },
         color2: { value: '#4cccff', label: 'Color 2' },
         rimColor: { value: '#1a66cc', label: 'Rim Color' },
+        shapeType: {
+            value: 'Box',
+            options: ['Box', 'Sphere', 'Cone', 'Torus', 'Capsule', 'Cylinder'],
+            label: 'Shape'
+        },
     })
 
     // Ref to hold current control values for the render loop
@@ -273,10 +321,24 @@ export default function App() {
         const uColor2 = gl.getUniformLocation(program, 'u_color2')
         const uRimColor = gl.getUniformLocation(program, 'u_rimColor')
         const uNumLines = gl.getUniformLocation(program, 'u_numLines')
+        const uShapeType = gl.getUniformLocation(program, 'u_shapeType')
 
         let animationFrameId: number
+        let lastFpsUpdate = 0
+        let frameCount = 0
 
         const render = (time: number) => {
+            // FPS Counter logic
+            frameCount++
+            if (time - lastFpsUpdate > 500) {
+                const fps = Math.round((frameCount * 1000) / (time - lastFpsUpdate))
+                if (fpsRef.current) {
+                    fpsRef.current.innerText = `${fps} FPS`
+                }
+                lastFpsUpdate = time
+                frameCount = 0
+            }
+
             // Access current values from ref
             const {
                 camX, camY, camZ,
@@ -285,7 +347,7 @@ export default function App() {
                 borderRadius, thickness,
                 speed, longevity, ease,
                 color1, color2, rimColor,
-                numLines
+                numLines, shapeType
             } = controlsRef.current
 
             gl.uniform1f(uTime, time * 0.001)
@@ -302,6 +364,11 @@ export default function App() {
             gl.uniform1f(uTrailLength, longevity)
             gl.uniform1f(uEase, ease)
             gl.uniform1f(uNumLines, numLines)
+
+            const shapeModeMap: Record<string, number> = {
+                'Box': 0, 'Sphere': 1, 'Cone': 2, 'Torus': 3, 'Capsule': 4, 'Cylinder': 5
+            }
+            gl.uniform1i(uShapeType, shapeModeMap[shapeType] ?? 0)
 
             // Helper to parse hex color to normalized RGB
             const hexToRgb = (hex: string) => {
@@ -343,5 +410,10 @@ export default function App() {
         }
     }, []) // Empty dependency array ensures WebGL context is created only once
 
-    return <canvas ref={canvasRef} />
+    return (
+        <div style={{ position: 'relative', width: '100vw', height: '100vh' }}>
+            <canvas ref={canvasRef} />
+            <div ref={fpsRef} className="fps-counter" />
+        </div>
+    )
 }
