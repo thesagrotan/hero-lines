@@ -50,6 +50,7 @@ uniform vec3 u_rimColor;
 uniform float u_numLines;
 uniform int u_shapeType; 
 uniform int u_orientation;
+uniform vec3 u_bgColor;
 
 float sdEllipsoid(vec3 p, vec3 r) {
     float k0 = length(p / r);
@@ -152,7 +153,7 @@ void main() {
     mat3 mI = transpose(rotZ(u_rot.z) * rotY(u_rot.y) * rotX(u_rot.x));
     vec3 ro_l = mI * u_camPos, fwd = normalize(mI * -u_camPos), right = normalize(cross(vec3(0, 1, 0), fwd)), up = cross(fwd, right), rd = normalize(fwd + uv.x * right + uv.y * up);
     vec2 tBox = intersectBox(ro_l, rd, u_boxSize);
-    vec3 col = vec3(0);
+    vec3 col = u_bgColor;
     if (tBox.x > 0.0) {
         float t = tBox.x; bool hit = false; vec3 p;
         for(int i=0; i<64; i++) { p = ro_l + rd * t; float d = map(p, u_boxSize, u_borderRadius); if(d < 0.001) { hit = true; break; } t += d; if(t > tBox.y) break; }
@@ -161,6 +162,7 @@ void main() {
         for(int i=0; i<64; i++) { p = ro_b + rd_b * tb; float d = map(p, u_boxSize, u_borderRadius); if(d < 0.001) { hit = true; break; } tb += d; if(tb > (tBox.y - tBox.x)) break; }
         if(hit) col += getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, true) * 0.5;
     }
+    if (tBox.x <= 0.0) col = u_bgColor;
     fragColor = vec4(col + (fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.02, 1.0);
 }
 `
@@ -205,6 +207,7 @@ export default function App() {
         { id: 'color1', actions: [{ id: 'c1-1', start: 0, end: 0.1, effectId: 'value', data: { value: '#0d66ff' } }] },
         { id: 'color2', actions: [{ id: 'c2-1', start: 0, end: 0.1, effectId: 'value', data: { value: '#4cccff' } }] },
         { id: 'rimColor', actions: [{ id: 'rc1', start: 0, end: 0.1, effectId: 'value', data: { value: '#1a66cc' } }] },
+        { id: 'bgColor', actions: [{ id: 'bg1', start: 0, end: 0.1, effectId: 'value', data: { value: '#000000' } }] },
     ] as PropertyRow[])
 
     const [controls, set] = useControls(() => ({
@@ -224,7 +227,7 @@ export default function App() {
             longevity: { value: 0.4, min: 0.05, max: 2, step: 0.05 },
             ease: { value: 0.5, min: 0, max: 1, step: 0.1 },
         }),
-        Appearance: folder({ color1: '#0d66ff', color2: '#4cccff', rimColor: '#1a66cc' }),
+        Appearance: folder({ color1: '#0d66ff', color2: '#4cccff', rimColor: '#1a66cc', bgColor: '#000000' }),
         Transition: folder({
             transitionSpeed: { value: 600, min: 100, max: 2000, step: 50, label: 'Duration (ms)' },
             transitionEase: { value: 'Ease In-Out', options: ['Ease In-Out', 'Ease In', 'Ease Out', 'Linear'], label: 'Easing' },
@@ -265,7 +268,7 @@ export default function App() {
         if (confirm('Delete?')) setTimelineData(prev => prev.map(r => r.id === row.id ? { ...r, actions: r.actions.filter(a => a.id !== action.id) } : r))
     }
     const handleCaptureKeyframe = () => {
-        const c = controlsRef.current, t = currentTime, map: any = { camX: c.camera.x, camY: c.camera.y, camZ: c.camera.z, zoom: c.zoom, boxX: c.dimensions.x, boxY: c.dimensions.y, boxZ: c.dimensions.z, rotX: c.rotation.x, rotY: c.rotation.y, rotZ: c.rotation.z, shapeType: c.shapeType, borderRadius: c.borderRadius, numLines: c.numLines, thickness: c.thickness, orientation: c.orientation, speed: c.speed, longevity: c.longevity, ease: c.ease, color1: c.color1, color2: c.color2, rimColor: c.rimColor }
+        const c = controlsRef.current, t = currentTime, map: any = { camX: c.camera.x, camY: c.camera.y, camZ: c.camera.z, zoom: c.zoom, boxX: c.dimensions.x, boxY: c.dimensions.y, boxZ: c.dimensions.z, rotX: c.rotation.x, rotY: c.rotation.y, rotZ: c.rotation.z, shapeType: c.shapeType, borderRadius: c.borderRadius, numLines: c.numLines, thickness: c.thickness, orientation: c.orientation, speed: c.speed, longevity: c.longevity, ease: c.ease, color1: c.color1, color2: c.color2, rimColor: c.rimColor, bgColor: c.bgColor }
         setTimelineData(prev => prev.map(row => {
             const val = map[row.id]; if (val === undefined) return row
             const idx = row.actions.findIndex(a => Math.abs(a.start - t) < 0.1)
@@ -335,7 +338,7 @@ export default function App() {
         gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program); gl.useProgram(program);
         const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW)
         const loc = gl.getAttribLocation(program, 'position'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0)
-        const u = { uTime: gl.getUniformLocation(program, 'u_time'), uRes: gl.getUniformLocation(program, 'u_resolution'), uCamPos: gl.getUniformLocation(program, 'u_camPos'), uBoxSize: gl.getUniformLocation(program, 'u_boxSize'), uRot: gl.getUniformLocation(program, 'u_rot'), uBorderRadius: gl.getUniformLocation(program, 'u_borderRadius'), uBorderThickness: gl.getUniformLocation(program, 'u_borderThickness'), uSpeed: gl.getUniformLocation(program, 'u_speed'), uTrailLength: gl.getUniformLocation(program, 'u_trailLength'), uEase: gl.getUniformLocation(program, 'u_ease'), uColor1: gl.getUniformLocation(program, 'u_color1'), uColor2: gl.getUniformLocation(program, 'u_color2'), uRimColor: gl.getUniformLocation(program, 'u_rimColor'), uNumLines: gl.getUniformLocation(program, 'u_numLines'), uShapeType: gl.getUniformLocation(program, 'u_shapeType'), uOrientation: gl.getUniformLocation(program, 'u_orientation') }
+        const u = { uTime: gl.getUniformLocation(program, 'u_time'), uRes: gl.getUniformLocation(program, 'u_resolution'), uCamPos: gl.getUniformLocation(program, 'u_camPos'), uBoxSize: gl.getUniformLocation(program, 'u_boxSize'), uRot: gl.getUniformLocation(program, 'u_rot'), uBorderRadius: gl.getUniformLocation(program, 'u_borderRadius'), uBorderThickness: gl.getUniformLocation(program, 'u_borderThickness'), uSpeed: gl.getUniformLocation(program, 'u_speed'), uTrailLength: gl.getUniformLocation(program, 'u_trailLength'), uEase: gl.getUniformLocation(program, 'u_ease'), uColor1: gl.getUniformLocation(program, 'u_color1'), uColor2: gl.getUniformLocation(program, 'u_color2'), uRimColor: gl.getUniformLocation(program, 'u_rimColor'), uNumLines: gl.getUniformLocation(program, 'u_numLines'), uShapeType: gl.getUniformLocation(program, 'u_shapeType'), uOrientation: gl.getUniformLocation(program, 'u_orientation'), uBgColor: gl.getUniformLocation(program, 'u_bgColor') }
         let id: number, last = 0
         const render = (now: number) => {
             if (timelineRef.current) { const t = timelineRef.current.getTime(); timelineTimeRef.current = t; setCurrentTime(t) }
@@ -374,13 +377,14 @@ export default function App() {
             const cl1 = (active && p) ? safeInterpolate('color1', timelineTimeRef.current, c.color1) : c.color1
             const cl2 = (active && p) ? safeInterpolate('color2', timelineTimeRef.current, c.color2) : c.color2
             const rc = (active && p) ? safeInterpolate('rimColor', timelineTimeRef.current, c.rimColor) : c.rimColor
+            const bg = (active && p) ? safeInterpolate('bgColor', timelineTimeRef.current, c.bgColor) : c.bgColor
             gl.uniform1f(u.uTime, now * 0.001); gl.uniform2f(u.uRes, canvas.width, canvas.height);
             const iz = 1.0 / zm; gl.uniform3f(u.uCamPos, cX * iz, cY * iz, cZ * iz); gl.uniform3f(u.uBoxSize, bX, bY, bZ);
             const tr = Math.PI / 180; gl.uniform3f(u.uRot, rX * tr, rY * tr, rZ * tr); gl.uniform1f(u.uBorderRadius, br); gl.uniform1f(u.uBorderThickness, th); gl.uniform1f(u.uSpeed, sp); gl.uniform1f(u.uTrailLength, lg); gl.uniform1f(u.uEase, es); gl.uniform1f(u.uNumLines, nl)
             const sm = { Box: 0, Sphere: 1, Cone: 2, Torus: 3, Capsule: 4, Cylinder: 5 } as any; gl.uniform1i(u.uShapeType, sm[st] ?? 0)
             const om = { Horizontal: 0, Vertical: 1, Depth: 2, Diagonal: 3 } as any; gl.uniform1i(u.uOrientation, om[or] ?? 0)
             const h2r = (hex: string) => { const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255; return [r, g, b] }
-            const v1 = h2r(cl1), v2 = h2r(cl2), vr = h2r(rc); gl.uniform3f(u.uColor1, v1[0], v1[1], v1[2]); gl.uniform3f(u.uColor2, v2[0], v2[1], v2[2]); gl.uniform3f(u.uRimColor, vr[0], vr[1], vr[2])
+            const v1 = h2r(cl1), v2 = h2r(cl2), vr = h2r(rc), vb = h2r(bg); gl.uniform3f(u.uColor1, v1[0], v1[1], v1[2]); gl.uniform3f(u.uColor2, v2[0], v2[1], v2[2]); gl.uniform3f(u.uRimColor, vr[0], vr[1], vr[2]); gl.uniform3f(u.uBgColor, vb[0], vb[1], vb[2])
             gl.drawArrays(gl.TRIANGLES, 0, 6); id = requestAnimationFrame(render)
         }
         const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; gl.viewport(0, 0, canvas.width, canvas.height) }
