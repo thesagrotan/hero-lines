@@ -1,0 +1,145 @@
+#version 300 es
+precision highp float;
+out vec4 fragColor;
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform vec3 u_camPos;
+uniform vec3 u_boxSize;
+uniform vec3 u_rot; 
+uniform float u_borderRadius;
+uniform float u_borderThickness;
+uniform float u_speed;
+uniform float u_trailLength;
+uniform float u_ease;
+uniform vec3 u_color1;
+uniform vec3 u_color2;
+uniform vec3 u_rimColor;
+uniform float u_numLines;
+uniform int u_shapeType; 
+uniform int u_orientation;
+uniform vec3 u_bgColor;
+uniform vec3 u_position;
+
+float sdEllipsoid(vec3 p, vec3 r) {
+    float k0 = length(p / r);
+    float k1 = length(p / (r * r));
+    return k0 * (k0 - 1.0) / k1;
+}
+
+float sdCone(vec3 p, vec3 h, int orient) {
+    vec3 p_o = (orient == 1) ? p.yxz : (orient == 2) ? p.zyx : p.xyz;
+    vec3 h_o = (orient == 1) ? h.yxz : (orient == 2) ? h.zyx : h.xyz;
+    float q = length(p_o.yz / h_o.yz);
+    float taper = 1.0 - clamp(p_o.x / h_o.x, -1.0, 1.0);
+    return max(q - taper, abs(p_o.x) - h_o.x);
+}
+
+float sdTorus(vec3 p, vec3 h, int orient) {
+    vec3 p_o = (orient == 1) ? p.yxz : (orient == 2) ? p.zyx : p.xyz;
+    vec3 h_o = (orient == 1) ? h.yxz : (orient == 2) ? h.zyx : h.xyz;
+    vec2 q = vec2(length(p_o.yz / h_o.yz) - 1.0, p_o.x / h_o.x);
+    return (length(q) - 0.2) * min(h_o.x, min(h_o.y, h_o.z));
+}
+
+float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
+    vec3 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h) - r;
+}
+
+float sdCylinder(vec3 p, vec3 h, int orient) {
+    vec3 p_o = (orient == 1) ? p.yxz : (orient == 2) ? p.zyx : p.xyz;
+    vec3 h_o = (orient == 1) ? h.yxz : (orient == 2) ? h.zyx : h.xyz;
+    vec2 d = abs(vec2(length(p_o.yz / h_o.yz), p_o.x / h_o.x)) - 1.0;
+    return (min(max(d.x, d.y), 0.0) + length(max(d, 0.0))) * min(h_o.x, min(h_o.y, h_o.z));
+}
+
+float sdRoundBox(vec3 p, vec3 b, float r) {
+    vec3 q = abs(p) - b;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
+}
+
+float map(vec3 p, vec3 boxSize, float radius) {
+    float d = 0.0;
+    if (u_shapeType == 1) d = sdEllipsoid(p, boxSize);
+    else if (u_shapeType == 2) d = sdCone(p, boxSize, u_orientation);
+    else if (u_shapeType == 3) d = sdTorus(p, boxSize, u_orientation);
+    else if (u_shapeType == 4) {
+        vec3 a = (u_orientation == 1) ? vec3(0, -boxSize.y, 0) : (u_orientation == 2) ? vec3(0, 0, -boxSize.z) : vec3(-boxSize.x, 0, 0);
+        vec3 b = (u_orientation == 1) ? vec3(0, boxSize.y, 0) : (u_orientation == 2) ? vec3(0, 0, boxSize.z) : vec3(boxSize.x, 0, 0);
+        float r_cap = (u_orientation == 1 || u_orientation == 2) ? boxSize.x : boxSize.y;
+        d = sdCapsule(p, a, b, r_cap * 0.5);
+    } else if (u_shapeType == 5) d = sdCylinder(p, boxSize, u_orientation);
+    else {
+        vec3 innerSize = max(boxSize - vec3(radius), vec3(0.001));
+        return sdRoundBox(p, innerSize, radius);
+    }
+    return d - radius;
+}
+
+vec3 calcNormal(vec3 p, vec3 boxSize, float radius) {
+    const float h = 0.0001;
+    const vec2 k = vec2(1.0, -1.0);
+    return normalize(k.xyy * map(p + k.xyy * h, boxSize, radius) + k.yyx * map(p + k.yyx * h, boxSize, radius) + k.yxy * map(p + k.yxy * h, boxSize, radius) + k.xxx * map(p + k.xxx * h, boxSize, radius));
+}
+
+mat3 rotX(float a) { float s=sin(a), c=cos(a); return mat3(1,0,0, 0,c,-s, 0,s,c); }
+mat3 rotY(float a) { float s=sin(a), c=cos(a); return mat3(c,0,s, 0,1,0, -s,0,c); }
+mat3 rotZ(float a) { float s=sin(a), c=cos(a); return mat3(c,-s,0, s,c,0, 0,0,1); }
+
+vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
+    vec3 m = 1.0 / rd, n = m * ro, k = abs(m) * boxSize;
+    vec3 t1 = -n - k, t2 = -n + k;
+    float tN = max(max(t1.x, t1.y), t1.z), tF = min(min(t2.x, t2.y), t2.z);
+    return (tN > tF || tF < 0.0) ? vec2(-1.0) : vec2(tN, tF);
+}
+
+vec3 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isBack) {
+    float sliceCoord = (u_orientation == 1) ? p.y : (u_orientation == 2) ? p.z : (u_orientation == 3) ? (p.x + p.y + p.z) * 0.57735 : p.x;
+    float sliceRange = (u_orientation == 1) ? 2.0 * boxSize.y : (u_orientation == 2) ? 2.0 * boxSize.z : (u_orientation == 3) ? length(2.0 * boxSize) : 2.0 * boxSize.x;
+    float norm = clamp((sliceCoord + sliceRange * 0.5) / sliceRange, 0.0, 1.0);
+    float layerIdx = floor(norm * u_numLines), layerGap = sliceRange / (u_numLines + 0.001);
+    float layerCenter = (layerIdx + 0.5) * layerGap - sliceRange * 0.5;
+    float ds = fwidth(sliceCoord), actualThick = min(thickness, layerGap * 0.48);
+    float lineMask = 1.0 - smoothstep(actualThick - ds, actualThick + ds, abs(sliceCoord - layerCenter));
+    vec3 pUse = clamp(p, -boxSize, boxSize);
+    float p1 = pUse.y, p2 = pUse.z, b1 = boxSize.y, b2 = boxSize.z;
+    if (u_orientation == 1) { p1 = pUse.x; p2 = pUse.z; b1 = boxSize.x; b2 = boxSize.z; }
+    else if (u_orientation == 2) { p1 = pUse.x; p2 = pUse.y; b1 = boxSize.x; b2 = boxSize.y; }
+    float perimeter = (abs(p2 * b1) > abs(p1 * b2)) ? ((p2 > 0.0) ? (b1 + p1) : (3.0 * b1 + 2.0 * b2 - p1)) : ((p1 > 0.0) ? (2.0 * b1 + b2 - p2) : (4.0 * b1 + 3.0 * b2 + p2));
+    float progress = mod(time * u_speed - layerIdx * 0.02, 3.0), dist = fract(progress - (perimeter / (4.0 * (b1 + b2) + 0.001)));
+    float isActive = (dist < u_trailLength) ? pow(smoothstep(0.0, max(0.01, u_ease), 1.0 - abs(1.0 - (dist / u_trailLength) * 2.0)), 1.5) : 0.0;
+    vec3 n = calcNormal(p, boxSize, u_borderRadius);
+    float dotV = (u_orientation == 1) ? abs(n.y) : (u_orientation == 2) ? abs(n.z) : (u_orientation == 3) ? abs(dot(n, vec3(0.577))) : abs(n.x);
+    float alpha = lineMask * isActive * smoothstep(0.1, 0.4, 1.0 - dotV);
+    vec3 wire = (u_shapeType == 0) ? u_color1 * 0.1 * max(max((1.0 - smoothstep(thickness * 2.5 - fwidth(p.x), thickness * 2.5 + fwidth(p.x), abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - fwidth(p.y), thickness * 2.5 + fwidth(p.y), abs(abs(p.y) - boxSize.y))), (1.0 - smoothstep(thickness * 2.5 - fwidth(p.y), thickness * 2.5 + fwidth(p.y), abs(abs(p.y) - boxSize.y))) * (1.0 - smoothstep(thickness * 2.5 - fwidth(p.z), thickness * 2.5 + fwidth(p.z), abs(abs(p.z) - boxSize.z)))), (1.0 - smoothstep(thickness * 2.5 - fwidth(p.x), thickness * 2.5 + fwidth(p.x), abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - fwidth(p.z), thickness * 2.5 + fwidth(p.z), abs(abs(p.z) - boxSize.z)))) : vec3(0);
+    return (mix(u_color1, u_color2, isActive) * alpha + wire) * (isBack ? 1.0 : 2.5);
+}
+
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / u_resolution.y;
+    mat3 mI = transpose(rotZ(u_rot.z) * rotY(u_rot.y) * rotX(u_rot.x));
+    
+    // Relative camera position in object's local space
+    vec3 ro_l = mI * (u_camPos - u_position);
+    vec3 fwd = normalize(mI * -u_camPos); 
+    vec3 right = normalize(cross(vec3(0, 1, 0), fwd)), up = cross(fwd, right), rd = normalize(fwd + uv.x * right + uv.y * up);
+    
+    vec2 tBox = intersectBox(ro_l, rd, u_boxSize);
+    vec3 col = vec3(0.0);
+    
+    if (tBox.x > 0.0) {
+        float t = tBox.x; bool hit = false; vec3 p;
+        for(int i=0; i<64; i++) { p = ro_l + rd * t; float d = map(p, u_boxSize, u_borderRadius); if(d < 0.001) { hit = true; break; } t += d; if(t > tBox.y) break; }
+        if(hit) { col += getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, false) + u_rimColor * pow(1.0 - max(dot(-rd, calcNormal(p, u_boxSize, u_borderRadius)), 0.0), 3.0) * 0.4; }
+        vec3 ro_b = ro_l + rd * tBox.y, rd_b = -rd; float tb = 0.0; hit = false;
+        for(int i=0; i<64; i++) { p = ro_b + rd_b * tb; float d = map(p, u_boxSize, u_borderRadius); if(d < 0.001) { hit = true; break; } tb += d; if(tb > (tBox.y - tBox.x)) break; }
+        if(hit) col += getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, true) * 0.5;
+    }
+    
+    // We don't apply u_bgColor here because we'll clear the background in the renderer
+    // and use additive blending for objects.
+    // Dithering should ideally be applied in a final pass, but for now we'll skip it in the object pass
+    // to avoid summing up noise.
+    fragColor = vec4(col, 1.0);
+}
