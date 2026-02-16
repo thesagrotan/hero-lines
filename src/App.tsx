@@ -181,8 +181,8 @@ const DEVICE_TEMPLATES: Record<string, any> = {
 
 export default function App() {
     const canvasRef = useRef<HTMLCanvasElement>(null), fpsRef = useRef<HTMLDivElement>(null), sidebarRowsRef = useRef<HTMLDivElement>(null), timelineRef = useRef<any>(null), fileInputRef = useRef<HTMLInputElement>(null)
-    const transitionRef = useRef<{ startTime: number; duration: number; fromRotY: number; extraSpin: number; active: boolean }>({ startTime: 0, duration: 600, fromRotY: 0, extraSpin: 360, active: false })
-    const [showTimeline, setShowTimeline] = useState(true), [isPlaying, setIsPlaying] = useState(false), [currentTime, setCurrentTime] = useState(0)
+    const transitionRef = useRef<{ startTime: number; duration: number; fromRotY: number; extraSpin: number; easeType: string; fromDims: { x: number; y: number; z: number }; fromBR: number; fromCam: { x: number; y: number; z: number }; fromZoom: number; active: boolean }>({ startTime: 0, duration: 600, fromRotY: 0, extraSpin: 360, easeType: 'Ease In-Out', fromDims: { x: 0, y: 0, z: 0 }, fromBR: 0, fromCam: { x: 0, y: 0, z: 0 }, fromZoom: 1, active: false })
+    const [showTimeline, setShowTimeline] = useState(true), [isPlaying, setIsPlaying] = useState(false), [currentTime, setCurrentTime] = useState(0), [cycling, setCycling] = useState(false)
     const [timelineData, setTimelineData] = useState<TimelineRow[]>([
         { id: 'camX', actions: [{ id: 'cx1', start: 0, end: 0.1, effectId: 'value', data: { value: 5.0 } }] },
         { id: 'camY', actions: [{ id: 'cy1', start: 0, end: 0.1, effectId: 'value', data: { value: 4.5 } }] },
@@ -225,6 +225,10 @@ export default function App() {
             ease: { value: 0.5, min: 0, max: 1, step: 0.1 },
         }),
         Appearance: folder({ color1: '#0d66ff', color2: '#4cccff', rimColor: '#1a66cc' }),
+        Transition: folder({
+            transitionSpeed: { value: 600, min: 100, max: 2000, step: 50, label: 'Duration (ms)' },
+            transitionEase: { value: 'Ease In-Out', options: ['Ease In-Out', 'Ease In', 'Ease Out', 'Linear'], label: 'Easing' },
+        }),
     }))
 
     const showTimelineRef = useRef(showTimeline), timelineDataRef = useRef(timelineData), isPlayingRef = useRef(isPlaying), timelineTimeRef = useRef(0), controlsRef = useRef(controls)
@@ -272,8 +276,21 @@ export default function App() {
     const handlePlayPause = () => { if (isPlaying) { timelineRef.current?.pause(); setIsPlaying(false) } else { timelineRef.current?.play({ autoEnd: true }); setIsPlaying(true) } }
     const applyTemplate = (name: string) => {
         const t = DEVICE_TEMPLATES[name]; if (!t) return
-        transitionRef.current = { startTime: performance.now(), duration: 600, fromRotY: controlsRef.current.rotation.y, extraSpin: 360, active: true }
+        const c = controlsRef.current
+        transitionRef.current = { startTime: performance.now(), duration: c.transitionSpeed, fromRotY: c.rotation.y, extraSpin: 360, easeType: c.transitionEase, fromDims: { ...c.dimensions }, fromBR: c.borderRadius, fromCam: { ...c.camera }, fromZoom: c.zoom, active: true }
         set(t)
+    }
+    const handleCycleAll = () => {
+        const names = Object.keys(DEVICE_TEMPLATES)
+        const duration = controlsRef.current.transitionSpeed
+        const pause = 400
+        setCycling(true)
+        names.forEach((name, i) => {
+            setTimeout(() => {
+                applyTemplate(name)
+                if (i === names.length - 1) setTimeout(() => setCycling(false), duration + pause)
+            }, i * (duration + pause))
+        })
     }
 
     const handleExport = () => {
@@ -323,16 +340,22 @@ export default function App() {
         const render = (now: number) => {
             if (timelineRef.current) { const t = timelineRef.current.getTime(); timelineTimeRef.current = t; setCurrentTime(t) }
             const c = controlsRef.current, active = showTimelineRef.current, p = isPlayingRef.current
-            const bX = (active && p) ? safeInterpolate('boxX', timelineTimeRef.current, c.dimensions.x) : c.dimensions.x
-            const bY = (active && p) ? safeInterpolate('boxY', timelineTimeRef.current, c.dimensions.y) : c.dimensions.y
-            const bZ = (active && p) ? safeInterpolate('boxZ', timelineTimeRef.current, c.dimensions.z) : c.dimensions.z
+            let bX = (active && p) ? safeInterpolate('boxX', timelineTimeRef.current, c.dimensions.x) : c.dimensions.x
+            let bY = (active && p) ? safeInterpolate('boxY', timelineTimeRef.current, c.dimensions.y) : c.dimensions.y
+            let bZ = (active && p) ? safeInterpolate('boxZ', timelineTimeRef.current, c.dimensions.z) : c.dimensions.z
             const rX = (active && p) ? safeInterpolate('rotX', timelineTimeRef.current, c.rotation.x) : c.rotation.x
             let rY = (active && p) ? safeInterpolate('rotY', timelineTimeRef.current, c.rotation.y) : c.rotation.y
             const tr_ = transitionRef.current
             if (tr_.active) {
                 const elapsed = now - tr_.startTime, progress = Math.min(elapsed / tr_.duration, 1)
-                const ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2
+                let ease = progress
+                if (tr_.easeType === 'Ease In-Out') ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2
+                else if (tr_.easeType === 'Ease In') ease = progress * progress * progress
+                else if (tr_.easeType === 'Ease Out') ease = 1 - Math.pow(1 - progress, 3)
                 rY += tr_.extraSpin * ease
+                bX = tr_.fromDims.x + (bX - tr_.fromDims.x) * ease
+                bY = tr_.fromDims.y + (bY - tr_.fromDims.y) * ease
+                bZ = tr_.fromDims.z + (bZ - tr_.fromDims.z) * ease
                 if (progress >= 1) tr_.active = false
             }
             const rZ = (active && p) ? safeInterpolate('rotZ', timelineTimeRef.current, c.rotation.z) : c.rotation.z
@@ -376,11 +399,15 @@ export default function App() {
             </div>
             <div className="template-bar">
                 {Object.keys(DEVICE_TEMPLATES).map(name => (
-                    <button key={name} className="template-btn" onClick={() => applyTemplate(name)}>
+                    <button key={name} className="template-btn" onClick={() => applyTemplate(name)} disabled={cycling}>
                         <span className="template-icon">{name === 'Smartwatch' ? '⌚' : name === 'Mobile' ? '📱' : name === 'Tablet' ? '📲' : '💻'}</span>
                         <span className="template-label">{name}</span>
                     </button>
                 ))}
+                <button className="template-btn" onClick={handleCycleAll} disabled={cycling} style={{ borderLeft: '1px solid #555' }}>
+                    <span className="template-icon">{cycling ? '⏳' : '🔄'}</span>
+                    <span className="template-label">{cycling ? 'Playing...' : 'Demo All'}</span>
+                </button>
             </div>
             {showTimeline && (
                 <div className="timeline-container" style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: '300px', background: '#111', display: 'flex', flexDirection: 'column' }}>
