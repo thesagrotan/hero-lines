@@ -172,6 +172,13 @@ function createShader(gl: WebGL2RenderingContext, type: number, source: string) 
     return shader
 }
 
+const DEVICE_TEMPLATES: Record<string, any> = {
+    Smartwatch: { dimensions: { x: 0.8, y: 1.0, z: 0.3 }, borderRadius: 0.35, shapeType: 'Box', camera: { x: 3.0, y: 2.5, z: 5.0 }, zoom: 0.7 },
+    Mobile: { dimensions: { x: 1.0, y: 2.0, z: 0.2 }, borderRadius: 0.15, shapeType: 'Box', camera: { x: 4.0, y: 3.5, z: 6.5 }, zoom: 0.85 },
+    Tablet: { dimensions: { x: 2.0, y: 2.8, z: 0.15 }, borderRadius: 0.12, shapeType: 'Box', camera: { x: 5.0, y: 4.5, z: 8.0 }, zoom: 1.0 },
+    Laptop: { dimensions: { x: 3.5, y: 2.2, z: 0.12 }, borderRadius: 0.08, shapeType: 'Box', camera: { x: 6.0, y: 5.0, z: 10.0 }, zoom: 1.1 },
+}
+
 export default function App() {
     const canvasRef = useRef<HTMLCanvasElement>(null), fpsRef = useRef<HTMLDivElement>(null), sidebarRowsRef = useRef<HTMLDivElement>(null), timelineRef = useRef<any>(null), fileInputRef = useRef<HTMLInputElement>(null)
     const [showTimeline, setShowTimeline] = useState(true), [isPlaying, setIsPlaying] = useState(false), [currentTime, setCurrentTime] = useState(0)
@@ -262,6 +269,7 @@ export default function App() {
         }))
     }
     const handlePlayPause = () => { if (isPlaying) { timelineRef.current?.pause(); setIsPlaying(false) } else { timelineRef.current?.play({ autoEnd: true }); setIsPlaying(true) } }
+    const applyTemplate = (name: string) => { const t = DEVICE_TEMPLATES[name]; if (t) set(t) }
 
     const handleExport = () => {
         const data = {
@@ -353,6 +361,14 @@ export default function App() {
             <div style={{ position: 'absolute', top: '20px', right: '20px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 <button onClick={() => set({ zoom: Math.min(2.0, controlsRef.current.zoom + 0.1) })} style={{ width: '30px', height: '30px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px' }}>+</button>
                 <button onClick={() => set({ zoom: Math.max(0.1, controlsRef.current.zoom - 0.1) })} style={{ width: '30px', height: '30px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px' }}>-</button>
+            </div>
+            <div className="template-bar">
+                {Object.keys(DEVICE_TEMPLATES).map(name => (
+                    <button key={name} className="template-btn" onClick={() => applyTemplate(name)}>
+                        <span className="template-icon">{name === 'Smartwatch' ? '⌚' : name === 'Mobile' ? '📱' : name === 'Tablet' ? '📲' : '💻'}</span>
+                        <span className="template-label">{name}</span>
+                    </button>
+                ))}
             </div>
             {showTimeline && (
                 <div className="timeline-container" style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: '300px', background: '#111', display: 'flex', flexDirection: 'column' }}>
