@@ -5,30 +5,44 @@ import { useEffect } from 'react';
 export const SceneControls = () => {
     const { scene, setScene } = useSceneStore();
 
-    const [controls, set] = useControls(() => ({
-        Scene: folder({
-            camera: { value: scene.camera, step: 0.1 },
-            zoom: { value: scene.zoom, min: 0.1, max: 2.0, step: 0.05 },
-            bgColor: { value: scene.bgColor },
-        }),
-        Transition: folder({
-            transitionSpeed: { value: scene.transitionSpeed, min: 100, max: 2000, step: 50, label: 'Duration (ms)' },
-            transitionEase: { value: scene.transitionEase, options: ['Ease In-Out', 'Ease In', 'Ease Out', 'Linear'], label: 'Easing' },
-        }),
-    }), [scene.camera, scene.zoom, scene.bgColor, scene.transitionSpeed, scene.transitionEase]);
+    const [, set] = useControls(() => ({
+        camera: {
+            value: scene.camera,
+            step: 0.1,
+            onChange: (v) => {
+                if (v.x !== scene.camera.x || v.y !== scene.camera.y || v.z !== scene.camera.z) {
+                    setScene({ camera: v });
+                }
+            }
+        },
+        zoom: {
+            value: scene.zoom,
+            min: 0.1, max: 2.0, step: 0.05,
+            onChange: (v) => {
+                if (v !== scene.zoom) setScene({ zoom: v });
+            }
+        },
+        bgColor: {
+            value: scene.bgColor,
+            onChange: (v) => {
+                if (v !== scene.bgColor) setScene({ bgColor: v });
+            }
+        },
+        transitionSpeed: {
+            value: scene.transitionSpeed, min: 100, max: 2000, step: 50, label: 'Duration (ms)',
+            onChange: (v) => {
+                if (v !== scene.transitionSpeed) setScene({ transitionSpeed: v });
+            }
+        },
+        transitionEase: {
+            value: scene.transitionEase, options: ['Ease In-Out', 'Ease In', 'Ease Out', 'Linear'], label: 'Easing',
+            onChange: (v) => {
+                if (v !== scene.transitionEase) setScene({ transitionEase: v as any });
+            }
+        },
+    }), []); // Stable panel
 
-    // Push local Leva changes to store
-    useEffect(() => {
-        setScene({
-            camera: controls.camera,
-            zoom: controls.zoom,
-            bgColor: controls.bgColor,
-            transitionSpeed: controls.transitionSpeed,
-            transitionEase: controls.transitionEase,
-        });
-    }, [controls, setScene]);
-
-    // Sync store changes back to Leva (e.g. from templates or reset)
+    // Sync store changes back to Leva (from templates, resets, etc.)
     useEffect(() => {
         set({
             camera: scene.camera,
@@ -37,7 +51,7 @@ export const SceneControls = () => {
             transitionSpeed: scene.transitionSpeed,
             transitionEase: scene.transitionEase,
         });
-    }, [scene, set]);
+    }, [scene.camera, scene.zoom, scene.bgColor, scene.transitionSpeed, scene.transitionEase, set]);
 
     return null;
 };

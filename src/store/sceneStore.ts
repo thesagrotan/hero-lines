@@ -23,6 +23,10 @@ interface SceneStore {
     setIsPlaying: (playing: boolean) => void;
     currentTime: number;
     setCurrentTime: (time: number) => void;
+
+    // Transitions
+    lastTransition: { objectId: string, duration: number, timestamp: number } | null;
+    triggerTransition: (objectId: string, duration: number) => void;
 }
 
 const INITIAL_SCENE_STATE: SceneState = {
@@ -97,7 +101,8 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
 
     addObject: () => {
         const id = crypto.randomUUID();
-        const name = `Object ${get().objects.length + 1}`;
+        const state = get();
+        const name = `Object ${state.objects.length + 1}`;
         const newObject = createDefaultObject(id, name);
         // Add some random offset
         newObject.position = {
@@ -106,9 +111,29 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
             z: (Math.random() - 0.5) * 4,
         };
 
+        // Create initial timeline rows for the new object mirroring the properties
+        const newRows: ObjectTimelineRow[] = [
+            { objectId: id, property: 'boxX', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.dimensions.x } }] },
+            { objectId: id, property: 'boxY', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.dimensions.y } }] },
+            { objectId: id, property: 'boxZ', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.dimensions.z } }] },
+            { objectId: id, property: 'rotX', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.rotation.x } }] },
+            { objectId: id, property: 'rotY', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.rotation.y } }] },
+            { objectId: id, property: 'rotZ', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.rotation.z } }] },
+            { objectId: id, property: 'borderRadius', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.borderRadius } }] },
+            { objectId: id, property: 'numLines', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.numLines } }] },
+            { objectId: id, property: 'thickness', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.thickness } }] },
+            { objectId: id, property: 'speed', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.speed } }] },
+            { objectId: id, property: 'longevity', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.longevity } }] },
+            { objectId: id, property: 'ease', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.ease } }] },
+            { objectId: id, property: 'color1', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.color1 } }] },
+            { objectId: id, property: 'color2', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.color2 } }] },
+            { objectId: id, property: 'rimColor', actions: [{ id: crypto.randomUUID(), start: 0, end: 0.1, effectId: 'value', data: { value: newObject.rimColor } }] },
+        ];
+
         set((state) => ({
             objects: [...state.objects, newObject],
             selectedObjectId: id,
+            timelineRows: [...state.timelineRows, ...newRows]
         }));
     },
 
@@ -132,7 +157,14 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
 
         const newTimelineRows: ObjectTimelineRow[] = get().timelineRows
             .filter(r => r.objectId === id)
-            .map(r => ({ ...r, objectId: newId }));
+            .map(r => ({
+                ...r,
+                objectId: newId,
+                actions: r.actions.map(a => ({
+                    ...a,
+                    id: crypto.randomUUID()
+                }))
+            }));
 
         set((state) => ({
             objects: [...state.objects, newObject],
@@ -153,4 +185,9 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     },
 
     setTimelineRows: (rows) => set({ timelineRows: rows }),
+
+    lastTransition: null,
+    triggerTransition: (objectId, duration) => set({
+        lastTransition: { objectId, duration, timestamp: Date.now() }
+    }),
 }));

@@ -141,5 +141,6 @@ void main() {
     // and use additive blending for objects.
     // Dithering should ideally be applied in a final pass, but for now we'll skip it in the object pass
     // to avoid summing up noise.
-    fragColor = vec4(col, 1.0);
+    // Use 0.0 alpha for additive blending so we don't blow up the alpha channel of the destination.
+    fragColor = vec4(col, 0.0);
 }

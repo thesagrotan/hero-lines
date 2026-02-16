@@ -9,82 +9,190 @@ export const ObjectControls = () => {
 
     const obj = objects.find((o) => o.id === selectedObjectId);
 
-    const [controls, set] = useControls(
+    const [, set] = useControls(
         () => ({
-            [obj?.name || 'Object']: folder({
-                Transformations: folder({
-                    position: { value: obj?.position ?? { x: 0, y: 0, z: 0 }, step: 0.1 },
-                    dimensions: { value: obj?.dimensions ?? { x: 1, y: 1, z: 1 }, step: 0.05 },
-                    rotation: { value: obj?.rotation ?? { x: 0, y: 0, z: 0 }, step: 1 },
-                }),
-                'Lines & Animation': folder({
-                    shapeType: {
-                        value: obj?.shapeType ?? 'Box',
-                        options: ['Box', 'Sphere', 'Cone', 'Torus', 'Capsule', 'Cylinder'],
-                    },
-                    borderRadius: { value: obj?.borderRadius ?? 0.1, min: 0, max: 1, step: 0.01 },
-                    numLines: { value: obj?.numLines ?? 30, min: 1, max: 100, step: 1 },
-                    thickness: { value: obj?.thickness ?? 0.01, min: 0.001, max: 0.1, step: 0.001 },
-                    orientation: {
-                        value: obj?.orientation ?? 'Horizontal',
-                        options: ['Horizontal', 'Vertical', 'Depth', 'Diagonal'],
-                    },
-                    speed: { value: obj?.speed ?? 0.8, min: 0, max: 5, step: 0.1 },
-                    longevity: { value: obj?.longevity ?? 0.4, min: 0.05, max: 2, step: 0.05 },
-                    ease: { value: obj?.ease ?? 0.5, min: 0, max: 1, step: 0.1 },
-                }),
-                Appearance: folder({
-                    color1: obj?.color1 ?? '#0d66ff',
-                    color2: obj?.color2 ?? '#4cccff',
-                    rimColor: obj?.rimColor ?? '#1a66cc',
-                }),
-            }),
+            position: {
+                value: { x: 0, y: 0, z: 0 },
+                step: 0.1,
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && (v.x !== currentObj.position.x || v.y !== currentObj.position.y || v.z !== currentObj.position.z)) {
+                        updateObject(selId, { position: v });
+                    }
+                }
+            },
+            dimensions: {
+                value: { x: 1, y: 1, z: 1 },
+                step: 0.05,
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && (v.x !== currentObj.dimensions.x || v.y !== currentObj.dimensions.y || v.z !== currentObj.dimensions.z)) {
+                        updateObject(selId, { dimensions: v });
+                    }
+                }
+            },
+            rotation: {
+                value: { x: 0, y: 0, z: 0 },
+                step: 1,
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && (v.x !== currentObj.rotation.x || v.y !== currentObj.rotation.y || v.z !== currentObj.rotation.z)) {
+                        updateObject(selId, { rotation: v });
+                    }
+                }
+            },
+            shapeType: {
+                value: 'Box',
+                options: ['Box', 'Sphere', 'Cone', 'Torus', 'Capsule', 'Cylinder'],
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.shapeType) {
+                        updateObject(selId, { shapeType: v as any });
+                    }
+                }
+            },
+            borderRadius: {
+                value: 0.1, min: 0, max: 1, step: 0.01,
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.borderRadius) {
+                        updateObject(selId, { borderRadius: v });
+                    }
+                }
+            },
+            numLines: {
+                value: 30, min: 1, max: 100, step: 1,
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.numLines) {
+                        updateObject(selId, { numLines: v });
+                    }
+                }
+            },
+            thickness: {
+                value: 0.01, min: 0.001, max: 0.1, step: 0.001,
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.thickness) {
+                        updateObject(selId, { thickness: v });
+                    }
+                }
+            },
+            orientation: {
+                value: 'Horizontal',
+                options: ['Horizontal', 'Vertical', 'Depth', 'Diagonal'],
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.orientation) {
+                        updateObject(selId, { orientation: v as any });
+                    }
+                }
+            },
+            speed: {
+                value: 0.8, min: 0, max: 5, step: 0.1,
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.speed) {
+                        updateObject(selId, { speed: v });
+                    }
+                }
+            },
+            longevity: {
+                value: 0.4, min: 0.05, max: 2, step: 0.05,
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.longevity) {
+                        updateObject(selId, { longevity: v });
+                    }
+                }
+            },
+            ease: {
+                value: 0.5, min: 0, max: 1, step: 0.1,
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.ease) {
+                        updateObject(selId, { ease: v });
+                    }
+                }
+            },
+            color1: {
+                value: '#0d66ff',
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.color1) {
+                        updateObject(selId, { color1: v });
+                    }
+                }
+            },
+            color2: {
+                value: '#4cccff',
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.color2) {
+                        updateObject(selId, { color2: v });
+                    }
+                }
+            },
+            rimColor: {
+                value: '#1a66cc',
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.rimColor) {
+                        updateObject(selId, { rimColor: v });
+                    }
+                }
+            },
         }),
-        [selectedObjectId, obj?.name]
+        []
     );
-
-    // Push local Leva changes to store
-    useEffect(() => {
-        if (selectedObjectId) {
-            updateObject(selectedObjectId, {
-                position: controls.position,
-                dimensions: controls.dimensions,
-                rotation: controls.rotation,
-                shapeType: controls.shapeType as any,
-                borderRadius: controls.borderRadius,
-                numLines: controls.numLines,
-                thickness: controls.thickness,
-                orientation: controls.orientation as any,
-                speed: controls.speed,
-                longevity: controls.longevity,
-                ease: controls.ease,
-                color1: controls.color1,
-                color2: controls.color2,
-                rimColor: controls.rimColor,
-            });
-        }
-    }, [controls, selectedObjectId, updateObject]);
 
     // Sync store changes back to Leva
     useEffect(() => {
-        if (obj) {
-            set({
-                position: obj.position,
-                dimensions: obj.dimensions,
-                rotation: obj.rotation,
-                shapeType: obj.shapeType,
-                borderRadius: obj.borderRadius,
-                numLines: obj.numLines,
-                thickness: obj.thickness,
-                orientation: obj.orientation,
-                speed: obj.speed,
-                longevity: obj.longevity,
-                ease: obj.ease,
-                color1: obj.color1,
-                color2: obj.color2,
-                rimColor: obj.rimColor,
-            });
-        }
+        if (!obj) return;
+        set({
+            position: obj.position,
+            dimensions: obj.dimensions,
+            rotation: obj.rotation,
+            shapeType: obj.shapeType,
+            borderRadius: obj.borderRadius,
+            numLines: obj.numLines,
+            thickness: obj.thickness,
+            orientation: obj.orientation,
+            speed: obj.speed,
+            longevity: obj.longevity,
+            ease: obj.ease,
+            color1: obj.color1,
+            color2: obj.color2,
+            rimColor: obj.rimColor,
+        });
     }, [obj, set]);
 
     return null;

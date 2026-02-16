@@ -8,7 +8,6 @@ export function useRenderer(canvasRef: React.RefObject<HTMLCanvasElement>, timel
     const rendererRef = useRef<WebGLRenderer | null>(null);
     const requestRef = useRef<number>();
 
-    // We use a ref for the transition state to avoid re-creating the loop on every change
     const transitionRef = useRef({
         startTime: 0,
         duration: 600,
@@ -21,6 +20,26 @@ export function useRenderer(canvasRef: React.RefObject<HTMLCanvasElement>, timel
         fromZoom: 1,
         active: false
     });
+
+    const lastTransition = useSceneStore(s => s.lastTransition);
+
+    useEffect(() => {
+        if (!lastTransition) return;
+        const tr = transitionRef.current;
+        const state = useSceneStore.getState();
+        const obj = state.objects.find(o => o.id === lastTransition.objectId);
+        if (!obj) return;
+
+        tr.startTime = performance.now();
+        tr.duration = lastTransition.duration;
+        tr.fromRotY = obj.rotation.y;
+        tr.fromDims = { ...obj.dimensions };
+        tr.fromBR = obj.borderRadius;
+        tr.fromCam = { ...state.scene.camera };
+        tr.fromZoom = state.scene.zoom;
+        tr.easeType = state.scene.transitionEase;
+        tr.active = true;
+    }, [lastTransition]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
