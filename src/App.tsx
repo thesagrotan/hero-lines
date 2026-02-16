@@ -181,6 +181,7 @@ const DEVICE_TEMPLATES: Record<string, any> = {
 
 export default function App() {
     const canvasRef = useRef<HTMLCanvasElement>(null), fpsRef = useRef<HTMLDivElement>(null), sidebarRowsRef = useRef<HTMLDivElement>(null), timelineRef = useRef<any>(null), fileInputRef = useRef<HTMLInputElement>(null)
+    const transitionRef = useRef<{ startTime: number; duration: number; fromRotY: number; extraSpin: number; active: boolean }>({ startTime: 0, duration: 600, fromRotY: 0, extraSpin: 360, active: false })
     const [showTimeline, setShowTimeline] = useState(true), [isPlaying, setIsPlaying] = useState(false), [currentTime, setCurrentTime] = useState(0)
     const [timelineData, setTimelineData] = useState<TimelineRow[]>([
         { id: 'camX', actions: [{ id: 'cx1', start: 0, end: 0.1, effectId: 'value', data: { value: 5.0 } }] },
@@ -269,7 +270,11 @@ export default function App() {
         }))
     }
     const handlePlayPause = () => { if (isPlaying) { timelineRef.current?.pause(); setIsPlaying(false) } else { timelineRef.current?.play({ autoEnd: true }); setIsPlaying(true) } }
-    const applyTemplate = (name: string) => { const t = DEVICE_TEMPLATES[name]; if (t) set(t) }
+    const applyTemplate = (name: string) => {
+        const t = DEVICE_TEMPLATES[name]; if (!t) return
+        transitionRef.current = { startTime: performance.now(), duration: 600, fromRotY: controlsRef.current.rotation.y, extraSpin: 360, active: true }
+        set(t)
+    }
 
     const handleExport = () => {
         const data = {
@@ -322,7 +327,14 @@ export default function App() {
             const bY = (active && p) ? safeInterpolate('boxY', timelineTimeRef.current, c.dimensions.y) : c.dimensions.y
             const bZ = (active && p) ? safeInterpolate('boxZ', timelineTimeRef.current, c.dimensions.z) : c.dimensions.z
             const rX = (active && p) ? safeInterpolate('rotX', timelineTimeRef.current, c.rotation.x) : c.rotation.x
-            const rY = (active && p) ? safeInterpolate('rotY', timelineTimeRef.current, c.rotation.y) : c.rotation.y
+            let rY = (active && p) ? safeInterpolate('rotY', timelineTimeRef.current, c.rotation.y) : c.rotation.y
+            const tr_ = transitionRef.current
+            if (tr_.active) {
+                const elapsed = now - tr_.startTime, progress = Math.min(elapsed / tr_.duration, 1)
+                const ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2
+                rY += tr_.extraSpin * ease
+                if (progress >= 1) tr_.active = false
+            }
             const rZ = (active && p) ? safeInterpolate('rotZ', timelineTimeRef.current, c.rotation.z) : c.rotation.z
             const cX = (active && p) ? safeInterpolate('camX', timelineTimeRef.current, c.camera.x) : c.camera.x
             const cY = (active && p) ? safeInterpolate('camY', timelineTimeRef.current, c.camera.y) : c.camera.y
