@@ -173,7 +173,7 @@ function createShader(gl: WebGL2RenderingContext, type: number, source: string) 
 }
 
 export default function App() {
-    const canvasRef = useRef<HTMLCanvasElement>(null), fpsRef = useRef<HTMLDivElement>(null), sidebarRowsRef = useRef<HTMLDivElement>(null), timelineRef = useRef<any>(null)
+    const canvasRef = useRef<HTMLCanvasElement>(null), fpsRef = useRef<HTMLDivElement>(null), sidebarRowsRef = useRef<HTMLDivElement>(null), timelineRef = useRef<any>(null), fileInputRef = useRef<HTMLInputElement>(null)
     const [showTimeline, setShowTimeline] = useState(true), [isPlaying, setIsPlaying] = useState(false), [currentTime, setCurrentTime] = useState(0)
     const [timelineData, setTimelineData] = useState<TimelineRow[]>([
         { id: 'camX', actions: [{ id: 'cx1', start: 0, end: 0.1, effectId: 'value', data: { value: 5.0 } }] },
@@ -263,6 +263,41 @@ export default function App() {
     }
     const handlePlayPause = () => { if (isPlaying) { timelineRef.current?.pause(); setIsPlaying(false) } else { timelineRef.current?.play({ autoEnd: true }); setIsPlaying(true) } }
 
+    const handleExport = () => {
+        const data = {
+            settings: controlsRef.current,
+            timeline: timelineDataRef.current
+        }
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `hero-lines-${new Date().toISOString().split('T')[0]}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+    }
+
+    const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]; if (!file) return
+        const reader = new FileReader()
+        reader.onload = (event) => {
+            try {
+                const data = JSON.parse(event.target?.result as string)
+                if (!data.settings || !data.timeline) throw new Error('Invalid format')
+                if (confirm('Import settings and animation? This will overwrite current data.')) {
+                    set(data.settings)
+                    setTimelineData(data.timeline)
+                    if (timelineRef.current) timelineRef.current.setTime(0)
+                    setCurrentTime(0)
+                }
+            } catch (err) {
+                alert('Error importing file: ' + (err as Error).message)
+            }
+        }
+        reader.readAsText(file)
+        e.target.value = ''
+    }
+
     useEffect(() => {
         const canvas = canvasRef.current; if (!canvas) return
         const gl = canvas.getContext('webgl2')!; const program = gl.createProgram()!
@@ -326,6 +361,9 @@ export default function App() {
                         <span style={{ color: '#fff', fontSize: '14px', fontFamily: 'monospace', minWidth: '80px' }}>{currentTime.toFixed(2)}s</span>
                         <button onClick={handleCaptureKeyframe} style={{ padding: '6px 12px', background: '#0d66ff', color: '#fff', borderRadius: '4px', fontWeight: 'bold' }}>Capture</button>
                         <button onClick={() => { timelineRef.current?.setTime(0); setCurrentTime(0); }} style={{ padding: '6px 12px', background: '#444', color: '#fff', borderRadius: '4px' }}>Reset</button>
+                        <button onClick={handleExport} style={{ padding: '6px 12px', background: '#ec4899', color: '#fff', borderRadius: '4px' }}>Export</button>
+                        <button onClick={() => fileInputRef.current?.click()} style={{ padding: '6px 12px', background: '#8b5cf6', color: '#fff', borderRadius: '4px' }}>Import</button>
+                        <input type="file" ref={fileInputRef} onChange={handleImport} accept=".json" style={{ display: 'none' }} />
                         <div style={{ marginLeft: 'auto', display: 'flex', gap: '15px', paddingRight: '10px' }}>
                             {timelineData.map(row => (
                                 <div key={row.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
