@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useControls, folder } from 'leva'
-import { Timeline, TimelineModel, TimelineRow, TimelineKeyframe } from 'animation-timeline-js'
-import './timeline.css'
+import { Timeline, TimelineRow, TimelineAction } from '@xzdarcy/react-timeline-editor'
+import '@xzdarcy/react-timeline-editor/dist/react-timeline-editor.css'
 
-// Custom interface for keyframes with values
-interface PropertyKeyframe extends TimelineKeyframe {
-    value: number | string;
+// Custom interface for actions with values
+interface PropertyAction extends TimelineAction {
+    data: {
+        value: number | string;
+    }
 }
 
 interface PropertyRow extends TimelineRow {
-    keyframes?: PropertyKeyframe[];
-    name: string;
+    actions: PropertyAction[];
 }
 
 const vsSource = `#version 300 es
@@ -265,20 +266,47 @@ function createShader(gl: WebGL2RenderingContext, type: number, source: string) 
 export default function App() {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const fpsRef = useRef<HTMLDivElement>(null)
-    const timelineElRef = useRef<HTMLDivElement>(null)
     const sidebarRowsRef = useRef<HTMLDivElement>(null)
-    const [timeline, setTimeline] = useState<Timeline | null>(null)
-    const [isPlaying, setIsPlaying] = useState(false)
-    const [currentTime, setCurrentTime] = useState(0)
     const [showTimeline, setShowTimeline] = useState(true)
-
     const showTimelineRef = useRef(true)
     useEffect(() => { showTimelineRef.current = showTimeline }, [showTimeline])
 
+    const [timelineData, setTimelineData] = useState<TimelineRow[]>([
+        { id: 'camX', actions: [{ id: 'cx1', start: 0, end: 0.1, effectId: 'value', data: { value: 5.0 } }] },
+        { id: 'camY', actions: [{ id: 'cy1', start: 0, end: 0.1, effectId: 'value', data: { value: 4.5 } }] },
+        { id: 'camZ', actions: [{ id: 'cz1', start: 0, end: 0.1, effectId: 'value', data: { value: 8.0 } }] },
+        { id: 'zoom', actions: [{ id: 'z1', start: 0, end: 0.1, effectId: 'value', data: { value: 1.0 } }] },
+        { id: 'boxX', actions: [{ id: 'bx1', start: 0, end: 0.1, effectId: 'value', data: { value: 2.5 } }, { id: 'bx2', start: 2, end: 2.1, effectId: 'value', data: { value: 4.0 } }, { id: 'bx3', start: 4, end: 4.1, effectId: 'value', data: { value: 2.5 } }] },
+        { id: 'boxY', actions: [{ id: 'by1', start: 0, end: 0.1, effectId: 'value', data: { value: 0.8 } }, { id: 'by2', start: 2, end: 2.1, effectId: 'value', data: { value: 1.5 } }, { id: 'by3', start: 4, end: 4.1, effectId: 'value', data: { value: 0.8 } }] },
+        { id: 'boxZ', actions: [{ id: 'bz1', start: 0, end: 0.1, effectId: 'value', data: { value: 1.2 } }, { id: 'bz2', start: 3, end: 3.1, effectId: 'value', data: { value: 0.4 } }, { id: 'bz3', start: 5, end: 5.1, effectId: 'value', data: { value: 1.2 } }] },
+        { id: 'rotX', actions: [{ id: 'rx1', start: 0, end: 0.1, effectId: 'value', data: { value: 0 } }, { id: 'rx2', start: 5, end: 5.1, effectId: 'value', data: { value: 360 } }] },
+        { id: 'rotY', actions: [{ id: 'ry1', start: 0, end: 0.1, effectId: 'value', data: { value: 0 } }, { id: 'ry2', start: 5, end: 5.1, effectId: 'value', data: { value: 360 } }] },
+        { id: 'rotZ', actions: [{ id: 'rz1', start: 0, end: 0.1, effectId: 'value', data: { value: 0 } }, { id: 'rz2', start: 5, end: 5.1, effectId: 'value', data: { value: 360 } }] },
+        { id: 'shapeType', actions: [{ id: 'st1', start: 0, end: 0.1, effectId: 'value', data: { value: 'Box' } }] },
+        { id: 'borderRadius', actions: [{ id: 'br1', start: 0, end: 0.1, effectId: 'value', data: { value: 0.1 } }] },
+        { id: 'numLines', actions: [{ id: 'nl1', start: 0, end: 0.1, effectId: 'value', data: { value: 30 } }] },
+        { id: 'thickness', actions: [{ id: 'th1', start: 0, end: 0.1, effectId: 'value', data: { value: 0.01 } }] },
+        { id: 'orientation', actions: [{ id: 'or1', start: 0, end: 0.1, effectId: 'value', data: { value: 'Horizontal' } }] },
+        { id: 'speed', actions: [{ id: 'sp1', start: 0, end: 0.1, effectId: 'value', data: { value: 0.8 } }] },
+        { id: 'longevity', actions: [{ id: 'lg1', start: 0, end: 0.1, effectId: 'value', data: { value: 0.4 } }] },
+        { id: 'ease', actions: [{ id: 'ea1', start: 0, end: 0.1, effectId: 'value', data: { value: 0.5 } }] },
+        { id: 'color1', actions: [{ id: 'c1-1', start: 0, end: 0.1, effectId: 'value', data: { value: '#0d66ff' } }] },
+        { id: 'color2', actions: [{ id: 'c2-1', start: 0, end: 0.1, effectId: 'value', data: { value: '#4cccff' } }] },
+        { id: 'rimColor', actions: [{ id: 'rc1', start: 0, end: 0.1, effectId: 'value', data: { value: '#1a66cc' } }] },
+    ] as PropertyRow[])
+
+    const timelineDataRef = useRef(timelineData)
+    useEffect(() => { timelineDataRef.current = timelineData }, [timelineData])
+
+    const [zoom, setZoom] = useState(1.0)
+    const zoomRef = useRef(1.0)
+    useEffect(() => { zoomRef.current = zoom }, [zoom])
+
     // Leva controls
-    const controls = useControls({
+    const [controls, set] = useControls(() => ({
         Transformations: folder({
             camera: { value: { x: 5.0, y: 4.5, z: 8.0 }, label: 'Camera', step: 0.1 },
+            zoom: { value: 1.0, min: 0.1, max: 2.0, step: 0.05, label: 'Zoom' },
             dimensions: { value: { x: 2.5, y: 0.8, z: 1.2 }, label: 'Dimensions', step: 0.05 },
             rotation: { value: { x: 0, y: 0, z: 0 }, label: 'Rotation', step: 1 },
         }),
@@ -305,38 +333,56 @@ export default function App() {
             color2: { value: '#4cccff', label: 'Color B' },
             rimColor: { value: '#1a66cc', label: 'Rim' },
         }),
-    })
+    }))
 
-    const modelRef = useRef<TimelineModel>({
-        rows: [
-            { name: 'boxX', keyframes: [{ val: 0, value: 2.5 }, { val: 2000, value: 4.0 }, { val: 4000, value: 2.5 }] },
-            { name: 'boxY', keyframes: [{ val: 0, value: 0.8 }, { val: 2000, value: 1.5 }, { val: 4000, value: 0.8 }] },
-            { name: 'boxZ', keyframes: [{ val: 0, value: 1.2 }, { val: 3000, value: 0.4 }, { val: 5000, value: 1.2 }] },
-            { name: 'rotX', keyframes: [{ val: 0, value: 0 }, { val: 5000, value: 360 }] },
-            { name: 'rotY', keyframes: [{ val: 0, value: 0 }, { val: 5000, value: 360 }] },
-            { name: 'rotZ', keyframes: [{ val: 0, value: 0 }, { val: 5000, value: 360 }] },
-        ] as PropertyRow[]
-    })
+    const [isPlaying, setIsPlaying] = useState(false)
+    const isPlayingRef = useRef(false)
+    useEffect(() => { isPlayingRef.current = isPlaying }, [isPlaying])
 
-    // Fixed interpolation logic
-    const safeInterpolate = (rowName: string, time: number, defaultValue: any) => {
-        const row = (modelRef.current.rows as PropertyRow[]).find(r => r.name === rowName)
-        if (!row || !row.keyframes || row.keyframes.length === 0) return defaultValue
+    const [currentTime, setCurrentTime] = useState(0)
+    const timelineTimeRef = useRef(0)
 
-        const kfs = [...row.keyframes].sort((a, b) => a.val - b.val)
+    // Interpolation logic for actions
+    const safeInterpolate = (rowId: string, time: number, defaultValue: any) => {
+        const row = (timelineDataRef.current as PropertyRow[]).find(r => r.id === rowId)
+        if (!row || !row.actions || row.actions.length === 0) return defaultValue
 
-        if (time <= kfs[0].val) return kfs[0].value
-        if (time >= kfs[kfs.length - 1].val) return kfs[kfs.length - 1].value
+        const actions = [...row.actions].sort((a, b) => a.start - b.start)
 
-        for (let i = 0; i < kfs.length - 1; i++) {
-            const k1 = kfs[i]
-            const k2 = kfs[i + 1]
-            if (time >= k1.val && time <= k2.val) {
-                const t = (time - k1.val) / (k2.val - k1.val)
-                if (typeof k1.value === 'number' && typeof k2.value === 'number') {
-                    return k1.value + (k2.value - k1.value) * t
+        if (time <= actions[0].start) return actions[0].data.value
+        if (time >= actions[actions.length - 1].start) return actions[actions.length - 1].data.value
+
+        for (let i = 0; i < actions.length - 1; i++) {
+            const a1 = actions[i]
+            const a2 = actions[i + 1]
+            if (time >= a1.start && time <= a2.start) {
+                const t = (time - a1.start) / (a2.start - a1.start)
+                const v1 = a1.data.value
+                const v2 = a2.data.value
+
+                // Handle numbers
+                if (typeof v1 === 'number' && typeof v2 === 'number') {
+                    return v1 + (v2 - v1) * (t || 0)
                 }
-                return k1.value
+
+                // Handle colors (simple hex support)
+                if (typeof v1 === 'string' && v1.startsWith('#') && typeof v2 === 'string' && v2.startsWith('#')) {
+                    const hexToRgb = (hex: string) => {
+                        const h = hex.replace('#', '')
+                        return [
+                            parseInt(h.substring(0, 2), 16),
+                            parseInt(h.substring(2, 4), 16),
+                            parseInt(h.substring(4, 6), 16)
+                        ]
+                    }
+                    const rgb1 = hexToRgb(v1)
+                    const rgb2 = hexToRgb(v2)
+                    const res = rgb1.map((c, idx) => Math.round(c + (rgb2[idx] - c) * t))
+                    return `#${res.map(c => c.toString(16).padStart(2, '0')).join('')}`
+                }
+
+                // Discrete or unknown (Step)
+                return v1
             }
         }
         return defaultValue
@@ -345,48 +391,108 @@ export default function App() {
     const controlsRef = useRef(controls)
     useEffect(() => { controlsRef.current = controls }, [controls])
 
-    const isPlayingRef = useRef(isPlaying)
-    useEffect(() => { isPlayingRef.current = isPlaying }, [isPlaying])
+    const timelineRef = useRef<any>(null)
 
-    const timelineTimeRef = useRef(0)
-
-    // Initialize Timeline
-    useEffect(() => {
-        if (timelineElRef.current && !timeline) {
-            const newTimeline = new Timeline({
-                id: timelineElRef.current,
-                rowsStyle: { height: 30 }
-            })
-            newTimeline.setModel(modelRef.current)
-
-            newTimeline.onScroll((args) => {
-                if (sidebarRowsRef.current) {
-                    sidebarRowsRef.current.scrollTop = args.scrollTop
+    const handleDoubleClickAction = (action: TimelineAction, row: TimelineRow) => {
+        const newValue = prompt('Enter new value:', String(action.data.value));
+        if (newValue !== null) {
+            const val = isNaN(Number(newValue)) ? newValue : Number(newValue);
+            setTimelineData(prev => prev.map(r => {
+                if (r.id === row.id) {
+                    return {
+                        ...r,
+                        actions: r.actions.map(a => a.id === action.id ? { ...a, data: { ...a.data, value: val } } : a)
+                    }
                 }
-            })
-
-            newTimeline.onTimeChanged((args) => {
-                setCurrentTime(args.val)
-                timelineTimeRef.current = args.val
-            })
-
-            newTimeline.onKeyframeChanged(() => {
-                const updatedModel = newTimeline.getModel()
-                if (updatedModel) {
-                    modelRef.current = updatedModel
-                }
-            })
-
-            setTimeline(newTimeline)
-            return () => newTimeline.dispose()
-        }
-    }, [timelineElRef])
-
-    const handleSidebarWheel = (e: React.WheelEvent) => {
-        if (timeline) {
-            timeline.scrollTop += e.deltaY;
+                return r;
+            }));
         }
     }
+
+    const handleContextMenuAction = (action: TimelineAction, row: TimelineRow) => {
+        if (confirm('Delete this keyframe?')) {
+            setTimelineData(prev => prev.map(r => {
+                if (r.id === row.id) {
+                    return {
+                        ...r,
+                        actions: r.actions.filter(a => a.id !== action.id)
+                    }
+                }
+                return r;
+            }));
+        }
+    }
+
+    const handleCaptureKeyframe = () => {
+        const c = controlsRef.current;
+        const time = currentTime;
+        const newActionsMap: Record<string, any> = {
+            camX: c.camera.x,
+            camY: c.camera.y,
+            camZ: c.camera.z,
+            zoom: c.zoom,
+            boxX: c.dimensions.x,
+            boxY: c.dimensions.y,
+            boxZ: c.dimensions.z,
+            rotX: c.rotation.x,
+            rotY: c.rotation.y,
+            rotZ: c.rotation.z,
+            shapeType: c.shapeType,
+            borderRadius: c.borderRadius,
+            numLines: c.numLines,
+            thickness: c.thickness,
+            orientation: c.orientation,
+            speed: c.speed,
+            longevity: c.longevity,
+            ease: c.ease,
+            color1: c.color1,
+            color2: c.color2,
+            rimColor: c.rimColor,
+        };
+
+        setTimelineData(prev => prev.map(row => {
+            const value = newActionsMap[row.id];
+            if (value === undefined) return row;
+
+            const existingActionIndex = row.actions.findIndex(a => Math.abs(a.start - time) < 0.1);
+
+            let newActions = [...row.actions];
+            if (existingActionIndex >= 0) {
+                newActions[existingActionIndex] = {
+                    ...newActions[existingActionIndex],
+                    data: { value }
+                };
+            } else {
+                newActions.push({
+                    id: `${row.id}-${Date.now()}`,
+                    start: time,
+                    end: time + 0.1,
+                    effectId: 'value',
+                    data: { value }
+                });
+            }
+            return { ...row, actions: newActions };
+        }));
+    }
+
+    const effects = {
+        value: {
+            id: 'value',
+            name: 'Value',
+        },
+    }
+
+    const handlePlayPause = () => {
+        if (!timelineRef.current) return
+        if (isPlaying) {
+            timelineRef.current.pause()
+            setIsPlaying(false)
+        } else {
+            timelineRef.current.play({ autoEnd: true })
+            setIsPlaying(true)
+        }
+    }
+
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -441,19 +547,19 @@ export default function App() {
             const dt = now - lastFrameTime
             lastFrameTime = now
 
-            if (isPlayingRef.current && timeline) {
-                timelineTimeRef.current += dt
-                timeline.setTime(timelineTimeRef.current)
-                setCurrentTime(timelineTimeRef.current)
-            } else if (timeline) {
-                timelineTimeRef.current = timeline.getTime()
-                setCurrentTime(timelineTimeRef.current)
+            if (timelineRef.current) {
+                const time = timelineRef.current.getTime()
+                // Convert to seconds if engine uses seconds (default)
+                // If it uses ms, we stay in ms. react-timeline-editor defaults to units.
+                // We'll treat units as seconds.
+                timelineTimeRef.current = time
+                setCurrentTime(time)
             }
 
             const c = controlsRef.current
-
-            // Interpolate only if timeline is active
             const isTimelineActive = showTimelineRef.current
+
+            // Interpolate
             const boxX = isTimelineActive ? safeInterpolate('boxX', timelineTimeRef.current, c.dimensions.x) : c.dimensions.x
             const boxY = isTimelineActive ? safeInterpolate('boxY', timelineTimeRef.current, c.dimensions.y) : c.dimensions.y
             const boxZ = isTimelineActive ? safeInterpolate('boxZ', timelineTimeRef.current, c.dimensions.z) : c.dimensions.z
@@ -461,29 +567,47 @@ export default function App() {
             const rotY = isTimelineActive ? safeInterpolate('rotY', timelineTimeRef.current, c.rotation.y) : c.rotation.y
             const rotZ = isTimelineActive ? safeInterpolate('rotZ', timelineTimeRef.current, c.rotation.z) : c.rotation.z
 
+            const camX = isTimelineActive ? safeInterpolate('camX', timelineTimeRef.current, c.camera.x) : c.camera.x
+            const camY = isTimelineActive ? safeInterpolate('camY', timelineTimeRef.current, c.camera.y) : c.camera.y
+            const camZ = isTimelineActive ? safeInterpolate('camZ', timelineTimeRef.current, c.camera.z) : c.camera.z
+            const currentZoom = isTimelineActive ? safeInterpolate('zoom', timelineTimeRef.current, c.zoom) : c.zoom
+
+            const shapeType = isTimelineActive ? safeInterpolate('shapeType', timelineTimeRef.current, c.shapeType) : c.shapeType
+            const borderRadius = isTimelineActive ? safeInterpolate('borderRadius', timelineTimeRef.current, c.borderRadius) : c.borderRadius
+            const numLines = isTimelineActive ? safeInterpolate('numLines', timelineTimeRef.current, c.numLines) : c.numLines
+            const thickness = isTimelineActive ? safeInterpolate('thickness', timelineTimeRef.current, c.thickness) : c.thickness
+            const orientation = isTimelineActive ? safeInterpolate('orientation', timelineTimeRef.current, c.orientation) : c.orientation
+            const speed = isTimelineActive ? safeInterpolate('speed', timelineTimeRef.current, c.speed) : c.speed
+            const longevity = isTimelineActive ? safeInterpolate('longevity', timelineTimeRef.current, c.longevity) : c.longevity
+            const ease = isTimelineActive ? safeInterpolate('ease', timelineTimeRef.current, c.ease) : c.ease
+            const color1 = isTimelineActive ? safeInterpolate('color1', timelineTimeRef.current, c.color1) : c.color1
+            const color2 = isTimelineActive ? safeInterpolate('color2', timelineTimeRef.current, c.color2) : c.color2
+            const rimColor = isTimelineActive ? safeInterpolate('rimColor', timelineTimeRef.current, c.rimColor) : c.rimColor
+
             gl.uniform1f(uniforms.uTime, now * 0.001)
             gl.uniform2f(uniforms.uRes, canvas.width, canvas.height)
-            gl.uniform3f(uniforms.uCamPos, c.camera.x, c.camera.y, c.camera.z)
+
+            gl.uniform3f(uniforms.uCamPos, camX * currentZoom, camY * currentZoom, camZ * currentZoom)
             gl.uniform3f(uniforms.uBoxSize, boxX, boxY, boxZ)
 
             const toRad = Math.PI / 180
             gl.uniform3f(uniforms.uRot, rotX * toRad, rotY * toRad, rotZ * toRad)
-            gl.uniform1f(uniforms.uBorderRadius, c.borderRadius)
-            gl.uniform1f(uniforms.uBorderThickness, c.thickness)
-            gl.uniform1f(uniforms.uSpeed, c.speed)
-            gl.uniform1f(uniforms.uTrailLength, c.longevity)
-            gl.uniform1f(uniforms.uEase, c.ease)
-            gl.uniform1f(uniforms.uNumLines, c.numLines)
+            gl.uniform1f(uniforms.uBorderRadius, borderRadius)
+            gl.uniform1f(uniforms.uBorderThickness, thickness)
+            gl.uniform1f(uniforms.uSpeed, speed)
+            gl.uniform1f(uniforms.uTrailLength, longevity)
+            gl.uniform1f(uniforms.uEase, ease)
+            gl.uniform1f(uniforms.uNumLines, numLines)
 
             const shapeModeMap: Record<string, number> = {
                 'Box': 0, 'Sphere': 1, 'Cone': 2, 'Torus': 3, 'Capsule': 4, 'Cylinder': 5
             }
-            gl.uniform1i(uniforms.uShapeType, shapeModeMap[c.shapeType] ?? 0)
+            gl.uniform1i(uniforms.uShapeType, shapeModeMap[shapeType] ?? 0)
 
             const orientationMap: Record<string, number> = {
                 'Horizontal': 0, 'Vertical': 1, 'Depth': 2, 'Diagonal': 3
             }
-            gl.uniform1i(uniforms.uOrientation, orientationMap[c.orientation] ?? 0)
+            gl.uniform1i(uniforms.uOrientation, orientationMap[orientation] ?? 0)
 
             const hexToRgb = (hex: string) => {
                 const r = parseInt(hex.slice(1, 3), 16) / 255
@@ -492,9 +616,9 @@ export default function App() {
                 return [r, g, b]
             }
 
-            const c1 = hexToRgb(c.color1)
-            const c2 = hexToRgb(c.color2)
-            const cr = hexToRgb(c.rimColor)
+            const c1 = hexToRgb(color1)
+            const c2 = hexToRgb(color2)
+            const cr = hexToRgb(rimColor)
 
             gl.uniform3f(uniforms.uColor1, c1[0], c1[1], c1[2])
             gl.uniform3f(uniforms.uColor2, c2[0], c2[1], c2[2])
@@ -510,18 +634,27 @@ export default function App() {
             gl.viewport(0, 0, canvas.width, canvas.height)
         }
 
+        const handleWheel = (e: WheelEvent) => {
+            const delta = e.deltaY * 0.001
+            set((prev: any) => ({
+                zoom: Math.max(0.1, Math.min(2.0, prev.zoom + delta))
+            }))
+        }
+
         window.addEventListener('resize', handleResize)
+        canvas.addEventListener('wheel', handleWheel, { passive: false })
         handleResize()
         animationFrameId = requestAnimationFrame(render)
 
         return () => {
             window.removeEventListener('resize', handleResize)
+            canvas.removeEventListener('wheel', handleWheel)
             cancelAnimationFrame(animationFrameId)
             gl.deleteProgram(program)
             gl.deleteShader(vs)
             gl.deleteShader(fs)
         }
-    }, [timeline])
+    }, [])
 
     return (
         <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#000' }}>
@@ -537,66 +670,138 @@ export default function App() {
                 </button>
             )}
 
+            <div style={{ position: 'absolute', top: '20px', right: '20px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <button
+                    onClick={() => set((p: any) => ({ zoom: Math.min(2.0, p.zoom + 0.1) }))}
+                    style={{ width: '30px', height: '30px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                    +
+                </button>
+                <button
+                    onClick={() => set((p: any) => ({ zoom: Math.max(0.1, p.zoom - 0.1) }))}
+                    style={{ width: '30px', height: '30px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                    -
+                </button>
+            </div>
+
             {showTimeline && (
-                <div className="timeline-container">
+                <div className="timeline-container" style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: '300px', background: '#111', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ padding: '8px', display: 'flex', gap: '10px', alignItems: 'center', borderBottom: '1px solid #333', background: '#222' }}>
                         <button
-                            onClick={() => setIsPlaying(!isPlaying)}
+                            onClick={handlePlayPause}
                             style={{ padding: '6px 16px', cursor: 'pointer', background: isPlaying ? '#ff4444' : '#44ff44', color: '#000', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}
                         >
                             {isPlaying ? 'Pause' : 'Play'}
                         </button>
                         <span style={{ color: '#fff', fontSize: '14px', fontFamily: 'monospace', minWidth: '80px' }}>
-                            {(currentTime / 1000).toFixed(2)}s
+                            {currentTime.toFixed(2)}s
                         </span>
                         <button
-                            onClick={() => { if (timeline) { timeline.setTime(0); timelineTimeRef.current = 0; setCurrentTime(0); } }}
+                            onClick={handleCaptureKeyframe}
+                            style={{ padding: '6px 12px', cursor: 'pointer', background: '#0d66ff', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}
+                            title="Capture current Leva settings as a keyframe"
+                        >
+                            Capture
+                        </button>
+                        <button
+                            onClick={() => { if (timelineRef.current) { timelineRef.current.setTime(0); setCurrentTime(0); } }}
                             style={{ padding: '6px 12px', cursor: 'pointer', background: '#444', color: '#fff', border: 'none', borderRadius: '4px' }}
                         >
                             Reset
                         </button>
                         <div style={{ marginLeft: 'auto', display: 'flex', gap: '15px', paddingRight: '10px' }}>
-                            {(modelRef.current.rows as PropertyRow[]).map(row => (
-                                <div key={row.name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                                    <span style={{ color: '#888', fontSize: '10px', textTransform: 'uppercase' }}>{row.name}</span>
+                            {timelineData.map(row => (
+                                <div key={row.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                    <span style={{ color: '#888', fontSize: '10px', textTransform: 'uppercase' }}>{row.id}</span>
                                     <span style={{ color: '#00ff00', fontSize: '12px', fontFamily: 'monospace' }}>
-                                        {Number(safeInterpolate(row.name, currentTime, 0)).toFixed(2)}
+                                        {(() => {
+                                            const val = safeInterpolate(row.id, currentTime, 0);
+                                            return typeof val === 'number' ? val.toFixed(2) : String(val);
+                                        })()}
                                     </span>
                                 </div>
                             ))}
                             <button
                                 className="timeline-hide-btn"
                                 onClick={() => setShowTimeline(false)}
-                                style={{ marginLeft: '10px' }}
+                                style={{
+                                    marginLeft: '10px',
+                                    background: 'transparent',
+                                    color: '#888',
+                                    border: '1px solid #444',
+                                    borderRadius: '4px',
+                                    padding: '2px 8px',
+                                    cursor: 'pointer'
+                                }}
                             >
                                 Hide
                             </button>
                         </div>
                     </div>
-                    <div className="timeline-body">
-                        <div className="timeline-sidebar">
-                            <div className="timeline-sidebar-header"></div>
-                            <div ref={sidebarRowsRef} className="timeline-sidebar-content" onWheel={handleSidebarWheel}>
-                                {(modelRef.current.rows as PropertyRow[]).map(row => {
+                    <div className="timeline-body" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                        <div className="timeline-sidebar" style={{ width: '150px', background: '#1a1a1a', display: 'flex', flexDirection: 'column', borderRight: '1px solid #333' }}>
+                            <div className="timeline-sidebar-header" style={{ height: '32px', borderBottom: '1px solid #333' }}></div>
+                            <div ref={sidebarRowsRef} className="timeline-sidebar-content" style={{ flex: 1, overflowY: 'hidden' }}>
+                                {timelineData.map((row, index) => {
                                     const labels: Record<string, string> = {
+                                        camX: 'Camera X',
+                                        camY: 'Camera Y',
+                                        camZ: 'Camera Z',
+                                        zoom: 'Zoom',
                                         boxX: 'Width (X)',
                                         boxY: 'Height (Y)',
                                         boxZ: 'Depth (Z)',
                                         rotX: 'Rotate X',
                                         rotY: 'Rotate Y',
-                                        rotZ: 'Rotate Z'
+                                        rotZ: 'Rotate Z',
+                                        shapeType: 'Shape',
+                                        borderRadius: 'Radius',
+                                        numLines: 'Line Count',
+                                        thickness: 'Thickness',
+                                        orientation: 'Orientation',
+                                        speed: 'Speed',
+                                        longevity: 'Longevity',
+                                        ease: 'Ease',
+                                        color1: 'Color A',
+                                        color2: 'Color B',
+                                        rimColor: 'Rim Color'
                                     };
                                     return (
-                                        <div key={row.name} className="timeline-sidebar-row">
-                                            {labels[row.name] || row.name}
+                                        <div key={row.id} style={{
+                                            height: '32px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            padding: '0 10px',
+                                            color: '#ccc',
+                                            fontSize: '11px',
+                                            borderBottom: '1px solid #222',
+                                            background: index % 2 === 0 ? '#1a1a1a' : '#222'
+                                        }}>
+                                            {labels[row.id] || row.id}
                                         </div>
                                     );
                                 })}
-                                {/* Extra space if needed for scrolling bottom */}
-                                <div style={{ height: '100px', flexShrink: 0 }}></div>
                             </div>
                         </div>
-                        <div ref={timelineElRef} className="timeline-el" />
+                        <div style={{ flex: 1, position: 'relative', background: '#000' }}>
+                            <Timeline
+                                ref={timelineRef}
+                                editorData={timelineData}
+                                effects={effects}
+                                onChange={setTimelineData}
+                                onDoubleClickAction={handleDoubleClickAction}
+                                onContextMenuAction={handleContextMenuAction}
+                                rowHeight={32}
+                                scale={1}
+                                startLeft={20}
+                                onScroll={({ scrollTop }) => {
+                                    if (sidebarRowsRef.current) {
+                                        sidebarRowsRef.current.scrollTop = scrollTop;
+                                    }
+                                }}
+                            />
+                        </div>
                     </div>
                 </div>
             )}
