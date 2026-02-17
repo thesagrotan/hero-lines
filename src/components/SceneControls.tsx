@@ -40,6 +40,16 @@ export const SceneControls = () => {
                 if (v !== scene.transitionEase) setScene({ transitionEase: v as any });
             }
         },
+        theme: {
+            value: scene.theme,
+            options: ['dark', 'light'],
+            onChange: (v: any) => {
+                if (v !== scene.theme) {
+                    const bgColor = v === 'light' ? '#f5f5f7' : '#000000';
+                    setScene({ theme: v, bgColor });
+                }
+            }
+        },
         'Device Animation': folder({
             'Auto Cycle': {
                 value: scene.autoCycle.enabled,
@@ -69,10 +79,11 @@ export const SceneControls = () => {
             bgColor: scene.bgColor,
             transitionSpeed: scene.transitionSpeed,
             transitionEase: scene.transitionEase,
+            theme: scene.theme,
             'Auto Cycle': scene.autoCycle.enabled,
             'Pause Time': scene.autoCycle.pauseTime,
         });
-    }, [scene.camera, scene.zoom, scene.bgColor, scene.transitionSpeed, scene.transitionEase, scene.autoCycle.enabled, scene.autoCycle.pauseTime, set]);
+    }, [scene.camera, scene.zoom, scene.bgColor, scene.transitionSpeed, scene.transitionEase, scene.theme, scene.autoCycle.enabled, scene.autoCycle.pauseTime, set]);
 
     return null;
 };

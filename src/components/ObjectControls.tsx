@@ -150,7 +150,7 @@ export const ObjectControls = () => {
                 }
             },
             color1: {
-                value: '#0d66ff',
+                value: '#db5a00',
                 onChange: (v) => {
                     const selId = useSceneStore.getState().selectedObjectId;
                     if (!selId) return;
@@ -161,7 +161,7 @@ export const ObjectControls = () => {
                 }
             },
             color2: {
-                value: '#4cccff',
+                value: '#101010',
                 onChange: (v) => {
                     const selId = useSceneStore.getState().selectedObjectId;
                     if (!selId) return;

@@ -52,7 +52,8 @@ const INITIAL_SCENE_STATE: SceneState = {
     autoCycle: {
         enabled: false,
         pauseTime: 0,
-    }
+    },
+    theme: 'dark'
 };
 
 const INITIAL_OBJECT_ID = 'main-obj';
@@ -72,9 +73,9 @@ const INITIAL_OBJECT: SceneObject = {
     speed: 0.8,
     longevity: 0.4,
     ease: 0.5,
-    color1: '#0d66ff',
-    color2: '#4cccff',
-    rimColor: '#1a66cc',
+    color1: '#db5a00',
+    color2: '#454545',
+    rimColor: '#101010',
     timeNoise: 0.5,
 };
 

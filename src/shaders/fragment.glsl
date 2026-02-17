@@ -115,7 +115,7 @@ vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
     return (tN > tF || tF < 0.0) ? vec2(-1.0) : vec2(tN, tF);
 }
 
-vec3 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isBack) {
+vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isBack) {
     float sliceCoord = (u_orientation == 1) ? p.y : (u_orientation == 2) ? p.z : (u_orientation == 3) ? (p.x + p.y + p.z) * 0.57735 : p.x;
     float sliceRange = (u_orientation == 1) ? 2.0 * boxSize.y : (u_orientation == 2) ? 2.0 * boxSize.z : (u_orientation == 3) ? length(2.0 * boxSize) : 2.0 * boxSize.x;
     float norm = clamp((sliceCoord + sliceRange * 0.5) / sliceRange, 0.0, 1.0);
@@ -135,9 +135,17 @@ vec3 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
     float isActive = (dist < u_trailLength) ? pow(smoothstep(0.0, max(0.01, u_ease), 1.0 - abs(1.0 - (dist / u_trailLength) * 2.0)), 1.5) : 0.0;
     vec3 n = calcNormal(p, boxSize, u_borderRadius);
     float dotV = (u_orientation == 1) ? abs(n.y) : (u_orientation == 2) ? abs(n.z) : (u_orientation == 3) ? abs(dot(n, vec3(0.577))) : abs(n.x);
-    float alpha = lineMask * isActive * smoothstep(0.1, 0.4, 1.0 - dotV);
-    vec3 wire = (u_shapeType == 0) ? u_color1 * 0.1 * max(max((1.0 - smoothstep(thickness * 2.5 - fwidth(p.x), thickness * 2.5 + fwidth(p.x), abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - fwidth(p.y), thickness * 2.5 + fwidth(p.y), abs(abs(p.y) - boxSize.y))), (1.0 - smoothstep(thickness * 2.5 - fwidth(p.y), thickness * 2.5 + fwidth(p.y), abs(abs(p.y) - boxSize.y))) * (1.0 - smoothstep(thickness * 2.5 - fwidth(p.z), thickness * 2.5 + fwidth(p.z), abs(abs(p.z) - boxSize.z)))), (1.0 - smoothstep(thickness * 2.5 - fwidth(p.x), thickness * 2.5 + fwidth(p.x), abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - fwidth(p.z), thickness * 2.5 + fwidth(p.z), abs(abs(p.z) - boxSize.z)))) : vec3(0);
-    return (mix(u_color1, u_color2, isActive) * alpha + wire) * (isBack ? 1.0 : 2.5);
+    float lineAlpha = lineMask * isActive * smoothstep(0.1, 0.4, 1.0 - dotV);
+    
+    vec3 wireColor = (u_shapeType == 0) ? u_color1 * 0.1 * max(max((1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.y) - boxSize.y))), (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.y) - boxSize.y))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.z) - boxSize.z)))), (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.z) - boxSize.z)))) : vec3(0);
+    float wireAlpha = (length(wireColor) > 0.001) ? 0.1 : 0.0;
+
+    vec3 baseColor = mix(u_color1, u_color2, isActive);
+    float totalAlpha = clamp(lineAlpha + wireAlpha, 0.0, 1.0);
+    vec3 finalRGB = baseColor * lineAlpha + wireColor;
+    
+    float boost = isBack ? 1.0 : 2.5;
+    return vec4(finalRGB * boost, totalAlpha * (isBack ? 0.5 : 1.0));
 }
 
 void main() {
@@ -151,20 +159,29 @@ void main() {
     
     vec2 tBox = intersectBox(ro_l, rd, u_boxSize);
     vec3 col = vec3(0.0);
+    float alpha = 0.0;
     
     if (tBox.x > 0.0) {
         float t = tBox.x; bool hit = false; vec3 p;
         for(int i=0; i<64; i++) { p = ro_l + rd * t; float d = map(p, u_boxSize, u_borderRadius); if(d < 0.001) { hit = true; break; } t += d; if(t > tBox.y) break; }
-        if(hit) { col += getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, false) + u_rimColor * pow(1.0 - max(dot(-rd, calcNormal(p, u_boxSize, u_borderRadius)), 0.0), 3.0) * 0.4; }
+        if(hit) { 
+            vec4 surface = getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, false);
+            vec3 n = calcNormal(p, u_boxSize, u_borderRadius);
+            float rim = pow(1.0 - max(dot(-rd, n), 0.0), 3.0) * 0.4;
+            vec3 rimRGB = u_rimColor * rim;
+            
+            col += surface.rgb + rimRGB;
+            alpha += surface.a + rim;
+        }
+        
         vec3 ro_b = ro_l + rd * tBox.y, rd_b = -rd; float tb = 0.0; hit = false;
         for(int i=0; i<64; i++) { p = ro_b + rd_b * tb; float d = map(p, u_boxSize, u_borderRadius); if(d < 0.001) { hit = true; break; } tb += d; if(tb > (tBox.y - tBox.x)) break; }
-        if(hit) col += getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, true) * 0.5;
+        if(hit) {
+            vec4 surfaceBack = getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, true);
+            col += surfaceBack.rgb * (1.0 - alpha); // Very basic occlusion
+            alpha += surfaceBack.a * (1.0 - alpha);
+        }
     }
     
-    // We don't apply u_bgColor here because we'll clear the background in the renderer
-    // and use additive blending for objects.
-    // Dithering should ideally be applied in a final pass, but for now we'll skip it in the object pass
-    // to avoid summing up noise.
-    // Use 0.0 alpha for additive blending so we don't blow up the alpha channel of the destination.
-    fragColor = vec4(col, 0.0);
+    fragColor = vec4(col, clamp(alpha, 0.0, 1.0));
 }

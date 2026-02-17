@@ -49,9 +49,9 @@ export class WebGLRenderer {
         gl.enableVertexAttribArray(posLoc);
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
-        // Blending setup (additive)
+        // Blending setup (pre-multiplied alpha)
         gl.enable(gl.BLEND);
-        gl.blendFunc(gl.ONE, gl.ONE);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     }
 
     private createShader(type: number, source: string): WebGLShader {
