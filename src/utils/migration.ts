@@ -1,10 +1,9 @@
-import { SceneState, SceneObject, ObjectTimelineRow, createDefaultObject } from '../types';
+import { SceneState, SceneObject, createDefaultObject } from '../types';
 
 export interface SceneDataV2 {
     version: 2;
     scene: SceneState;
     objects: SceneObject[];
-    timeline: ObjectTimelineRow[];
 }
 
 export function migrateV1ToV2(data: any): SceneDataV2 {
@@ -24,7 +23,6 @@ export function migrateV1ToV2(data: any): SceneDataV2 {
             transitionEase: 'easeInOutCubic'
         },
         objects: [],
-        timeline: []
     };
 
     // Case 1: Legacy format with 'leva' and 'timeline' (v1)
@@ -52,25 +50,11 @@ export function migrateV1ToV2(data: any): SceneDataV2 {
         if (leva.rimColor) obj.rimColor = leva.rimColor;
 
         migrated.objects.push(obj);
-
-        // Map timeline rows to object
-        if (Array.isArray(data.timeline)) {
-            migrated.timeline = data.timeline.map((row: any) => ({
-                objectId: objectId,
-                property: row.id,
-                actions: row.actions
-            }));
-        }
     }
     // Case 2: Just a raw array (very old timeline-only format)
     else if (Array.isArray(data)) {
         const objectId = 'legacy-obj-1';
         migrated.objects.push(createDefaultObject(objectId, 'Legacy Object'));
-        migrated.timeline = data.map((row: any) => ({
-            objectId: objectId,
-            property: row.id || row.property,
-            actions: row.actions
-        }));
     }
     // Case 3: Empty or unknown format, provide defaults
     else {

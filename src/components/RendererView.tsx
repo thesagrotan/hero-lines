@@ -2,16 +2,12 @@ import React, { useRef, useEffect } from 'react';
 import { useRenderer } from '../renderer/useRenderer';
 import { useSceneStore } from '../store/sceneStore';
 
-interface RendererViewProps {
-    timelineRef: React.RefObject<any>;
-}
-
-export const RendererView: React.FC<RendererViewProps> = ({ timelineRef }) => {
+export const RendererView: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const { scene, setScene } = useSceneStore();
 
     // Initialize renderer hooks
-    useRenderer(canvasRef, timelineRef);
+    useRenderer(canvasRef);
 
     // Zoom via wheel
     useEffect(() => {

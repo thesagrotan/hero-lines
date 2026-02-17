@@ -1,12 +1,11 @@
-import { SceneState, SceneObject, ObjectTimelineRow } from '../types';
+import { SceneState, SceneObject } from '../types';
 import { migrateV1ToV2, SceneDataV2 } from './migration';
 
-export function exportScene(scene: SceneState, objects: SceneObject[], timeline: ObjectTimelineRow[]) {
+export function exportScene(scene: SceneState, objects: SceneObject[]) {
     const data: SceneDataV2 = {
         version: 2,
         scene,
         objects,
-        timeline
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

@@ -2,9 +2,8 @@ import { useEffect, useRef, type RefObject } from 'react';
 import { useSceneStore } from '../store/sceneStore';
 import { WebGLRenderer } from './WebGLRenderer';
 import { vsSource, fsSource } from '../shaders';
-import { interpolateProperty } from '../utils/interpolation';
 
-export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>, timelineRef: RefObject<any>) {
+export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     const rendererRef = useRef<WebGLRenderer | null>(null);
     const requestRef = useRef<number>();
 
@@ -23,12 +22,6 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>, timelineRef
         active: false
     });
 
-    // Track the actual rendered state in a ref so transitions can pick up exactly where we left off
-    const lastRenderedState = useRef<{
-        objects: Record<string, { dimensions: any, borderRadius: number, rotation: any, shapeType: any }>,
-        scene: { camera: any, zoom: number }
-    } | null>(null);
-
     const lastTransitionHandled = useRef<number>(0);
 
     useEffect(() => {
@@ -45,7 +38,7 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>, timelineRef
 
         const render = (now: number) => {
             const state = useSceneStore.getState();
-            const { scene, objects, isPlaying, timelineRows, setCurrentTime, lastTransition } = state;
+            const { scene, objects, lastTransition, updateObject } = state;
 
             // Handle new transition trigger
             if (lastTransition && lastTransition.timestamp > lastTransitionHandled.current) {
@@ -72,49 +65,12 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>, timelineRef
 
                     tr.active = true;
                     lastTransitionHandled.current = lastTransition.timestamp;
-
-                    console.log(`Transition started for ${obj.name}: ${tr.fromShapeType} -> ${tr.toShapeType}`);
-                    console.log(`  Pos: [${tr.fromPos.x.toFixed(2)}, ${tr.fromPos.y.toFixed(2)}, ${tr.fromPos.z.toFixed(2)}] -> [${obj.position.x.toFixed(2)}, ${obj.position.y.toFixed(2)}, ${obj.position.z.toFixed(2)}]`);
-                    console.log(`  Dims: [${tr.fromDims.x.toFixed(2)}, ${tr.fromDims.y.toFixed(2)}, ${tr.fromDims.z.toFixed(2)}] -> [${obj.dimensions.x.toFixed(2)}, ${obj.dimensions.y.toFixed(2)}, ${obj.dimensions.z.toFixed(2)}]`);
                 }
             }
 
-            let time = state.currentTime;
-            // ... (rest of the render function remains the same, except we use the local 'scene' and 'objects' variables)
-            if (isPlaying && timelineRef.current) {
-                time = timelineRef.current.getTime();
-                setCurrentTime(time);
-            }
-
-            // Map objects with interpolated values
-            const interpolatedObjects = objects.map(obj => {
-                const baseObj = isPlaying ? {
-                    ...obj,
-                    position: {
-                        x: interpolateProperty(timelineRows, obj.id, 'posX', time, obj.position.x),
-                        y: interpolateProperty(timelineRows, obj.id, 'posY', time, obj.position.y),
-                        z: interpolateProperty(timelineRows, obj.id, 'posZ', time, obj.position.z),
-                    },
-                    dimensions: {
-                        x: interpolateProperty(timelineRows, obj.id, 'boxX', time, obj.dimensions.x),
-                        y: interpolateProperty(timelineRows, obj.id, 'boxY', time, obj.dimensions.y),
-                        z: interpolateProperty(timelineRows, obj.id, 'boxZ', time, obj.dimensions.z),
-                    },
-                    rotation: {
-                        x: interpolateProperty(timelineRows, obj.id, 'rotX', time, obj.rotation.x),
-                        y: interpolateProperty(timelineRows, obj.id, 'rotY', time, obj.rotation.y),
-                        z: interpolateProperty(timelineRows, obj.id, 'rotZ', time, obj.rotation.z),
-                    },
-                    borderRadius: interpolateProperty(timelineRows, obj.id, 'borderRadius', time, obj.borderRadius),
-                    numLines: interpolateProperty(timelineRows, obj.id, 'numLines', time, obj.numLines),
-                    thickness: interpolateProperty(timelineRows, obj.id, 'thickness', time, obj.thickness),
-                    speed: interpolateProperty(timelineRows, obj.id, 'speed', time, obj.speed),
-                    longevity: interpolateProperty(timelineRows, obj.id, 'longevity', time, obj.longevity),
-                    ease: interpolateProperty(timelineRows, obj.id, 'ease', time, obj.ease),
-                    color1: interpolateProperty(timelineRows, obj.id, 'color1', time, obj.color1),
-                    color2: interpolateProperty(timelineRows, obj.id, 'color2', time, obj.color2),
-                    rimColor: interpolateProperty(timelineRows, obj.id, 'rimColor', time, obj.rimColor),
-                } : {
+            // Map objects
+            const renderedObjects = objects.map(obj => {
+                const baseObj = {
                     ...obj,
                     position: { ...obj.position },
                     dimensions: { ...obj.dimensions },
@@ -129,17 +85,11 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>, timelineRef
                 };
             });
 
-            const mainObjectId = objects[0]?.id || 'main-obj';
-
-            const interpolatedScene = {
+            const renderedScene = {
                 ...scene,
-                camera: isPlaying ? {
-                    x: interpolateProperty(timelineRows, mainObjectId, 'camX', time, scene.camera.x),
-                    y: interpolateProperty(timelineRows, mainObjectId, 'camY', time, scene.camera.y),
-                    z: interpolateProperty(timelineRows, mainObjectId, 'camZ', time, scene.camera.z),
-                } : { ...scene.camera },
-                zoom: isPlaying ? interpolateProperty(timelineRows, mainObjectId, 'zoom', time, scene.zoom) : scene.zoom,
-                bgColor: isPlaying ? interpolateProperty(timelineRows, mainObjectId, 'bgColor', time, scene.bgColor) : scene.bgColor,
+                camera: { ...scene.camera },
+                zoom: scene.zoom,
+                bgColor: scene.bgColor,
             };
 
             // Transition logic
@@ -147,18 +97,16 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>, timelineRef
             if (tr.active) {
                 const elapsed = now - tr.startTime;
                 const progress = Math.min(elapsed / tr.duration, 1);
-
-                // Use Linear easing as requested for continuous flow
                 const ease = progress;
 
                 // Smoothly interpolate camera and zoom during transition
-                interpolatedScene.camera.x = tr.fromCam.x + (interpolatedScene.camera.x - tr.fromCam.x) * ease;
-                interpolatedScene.camera.y = tr.fromCam.y + (interpolatedScene.camera.y - tr.fromCam.y) * ease;
-                interpolatedScene.camera.z = tr.fromCam.z + (interpolatedScene.camera.z - tr.fromCam.z) * ease;
-                interpolatedScene.zoom = tr.fromZoom + (interpolatedScene.zoom - tr.fromZoom) * ease;
+                renderedScene.camera.x = tr.fromCam.x + (renderedScene.camera.x - tr.fromCam.x) * ease;
+                renderedScene.camera.y = tr.fromCam.y + (renderedScene.camera.y - tr.fromCam.y) * ease;
+                renderedScene.camera.z = tr.fromCam.z + (renderedScene.camera.z - tr.fromCam.z) * ease;
+                renderedScene.zoom = tr.fromZoom + (renderedScene.zoom - tr.fromZoom) * ease;
 
                 // Apply transition to active object
-                const targetObj: any = interpolatedObjects.find(o => o.id === lastTransition?.objectId) || interpolatedObjects[0];
+                const targetObj: any = renderedObjects.find(o => o.id === lastTransition?.objectId) || renderedObjects[0];
                 if (targetObj) {
                     targetObj.position.x = tr.fromPos.x + (targetObj.position.x - tr.fromPos.x) * ease;
                     targetObj.position.y = tr.fromPos.y + (targetObj.position.y - tr.fromPos.y) * ease;
@@ -183,10 +131,9 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>, timelineRef
                     tr.active = false;
                     // Persist the rotation in the store to avoid snapping back
                     if (lastTransition) {
-                        const s = useSceneStore.getState();
-                        const obj = s.objects.find(o => o.id === lastTransition.objectId);
+                        const obj = state.objects.find(o => o.id === lastTransition.objectId);
                         if (obj) {
-                            s.updateObject(obj.id, {
+                            updateObject(obj.id, {
                                 rotation: {
                                     x: tr.fromRot.x + (obj.rotation.x - tr.fromRot.x),
                                     y: tr.toRotY,
@@ -198,21 +145,7 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>, timelineRef
                 }
             }
 
-            // Save the current state for the next frame's potential transition start
-            lastRenderedState.current = {
-                scene: { camera: { ...interpolatedScene.camera }, zoom: interpolatedScene.zoom },
-                objects: interpolatedObjects.reduce((acc, obj) => {
-                    acc[obj.id] = {
-                        dimensions: { ...obj.dimensions },
-                        borderRadius: obj.borderRadius,
-                        rotation: { ...obj.rotation },
-                        shapeType: (obj as any).shapeTypeNext // The target shape of this frame
-                    };
-                    return acc;
-                }, {} as any)
-            };
-
-            rendererRef.current?.renderFrame(interpolatedScene, interpolatedObjects, now);
+            rendererRef.current?.renderFrame(renderedScene, renderedObjects, now);
             requestRef.current = requestAnimationFrame(render);
         };
 
@@ -233,7 +166,5 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>, timelineRef
         };
     }, [canvasRef]);
 
-    // Expose transition trigger? Or use a separate hook?
-    // For now, let's keep it simple and just provide the renderer.
     return rendererRef;
 }

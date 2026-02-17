@@ -41,22 +41,6 @@ export interface SceneState {
     theme: 'dark' | 'light';
 }
 
-export interface TimelineAction {
-    id: string;
-    start: number;
-    end: number;
-    effectId: string;
-    data: {
-        value: any;
-    };
-}
-
-export interface ObjectTimelineRow {
-    objectId: string;
-    property: string;
-    actions: TimelineAction[];
-}
-
 export interface PropertyRow {
     id: string;
     name: string;
