@@ -1,10 +1,19 @@
-import { SceneObject, SceneState } from '../types';
+import { SceneState, RenderableObject } from '../types';
+
+const DEG_TO_RAD = Math.PI / 180;
 
 export class WebGLRenderer {
     private gl: WebGL2RenderingContext;
     private program: WebGLProgram;
     private uniforms: Record<string, WebGLUniformLocation> = {};
     private quadBuffer: WebGLBuffer;
+
+    private static readonly SHAPE_MAP: Record<string, number> = {
+        Box: 0, Sphere: 1, Cone: 2, Torus: 3, Capsule: 4, Cylinder: 5
+    };
+    private static readonly ORIENT_MAP: Record<string, number> = {
+        Horizontal: 0, Vertical: 1, Depth: 2, Diagonal: 3
+    };
 
     constructor(canvas: HTMLCanvasElement, vsSource: string, fsSource: string) {
         const gl = canvas.getContext('webgl2', { alpha: false, antialias: true })!;
@@ -66,7 +75,7 @@ export class WebGLRenderer {
         return shader;
     }
 
-    public renderFrame(scene: SceneState, objects: SceneObject[], time: number) {
+    public renderFrame(scene: SceneState, objects: RenderableObject[], time: number) {
         const gl = this.gl;
         gl.useProgram(this.program);
 
@@ -83,9 +92,6 @@ export class WebGLRenderer {
         gl.uniform3f(this.uniforms['u_camPos'], scene.camera.x * iz, scene.camera.y * iz, scene.camera.z * iz);
         gl.uniform3f(this.uniforms['u_bgColor'], bg[0], bg[1], bg[2]);
 
-        const shapeMap: Record<string, number> = { Box: 0, Sphere: 1, Cone: 2, Torus: 3, Capsule: 4, Cylinder: 5 };
-        const orientMap: Record<string, number> = { Horizontal: 0, Vertical: 1, Depth: 2, Diagonal: 3 };
-
         objects.forEach(obj => {
             if (!obj.visible) return;
 
@@ -93,14 +99,15 @@ export class WebGLRenderer {
             gl.uniform3f(this.uniforms['u_position'], obj.position.x, obj.position.y, obj.position.z);
             gl.uniform3f(this.uniforms['u_boxSize'], obj.dimensions.x, obj.dimensions.y, obj.dimensions.z);
 
-            const tr = Math.PI / 180;
-            gl.uniform3f(this.uniforms['u_rot'], obj.rotation.x * tr, obj.rotation.y * tr, obj.rotation.z * tr);
+            gl.uniform3f(
+                this.uniforms['u_rot'],
+                obj.rotation.x * DEG_TO_RAD,
+                obj.rotation.y * DEG_TO_RAD,
+                obj.rotation.z * DEG_TO_RAD
+            );
 
             gl.uniform1f(this.uniforms['u_borderRadius'], obj.borderRadius);
-            gl.uniform1f(this.uniforms['u_borderThickness'], obj.thickness); // Note: renamed in shader to u_borderThickness? 
-            // In App.tsx it was u_borderThickness. Let's check fragment.glsl again.
-            // App.tsx: uBorderThickness: gl.getUniformLocation(program, 'u_borderThickness')
-            // fragment.glsl: uniform float u_borderThickness;
+            gl.uniform1f(this.uniforms['u_borderThickness'], obj.thickness);
 
             gl.uniform1f(this.uniforms['u_speed'], obj.speed);
             gl.uniform1f(this.uniforms['u_trailLength'], obj.longevity); // longevity maps to trailLength
@@ -108,10 +115,10 @@ export class WebGLRenderer {
             gl.uniform1f(this.uniforms['u_numLines'], obj.numLines);
             gl.uniform1f(this.uniforms['u_timeNoise'], obj.timeNoise);
 
-            gl.uniform1i(this.uniforms['u_shapeType'], shapeMap[obj.shapeType] ?? 0);
-            gl.uniform1i(this.uniforms['u_shapeTypeNext'], shapeMap[(obj as any).shapeTypeNext] ?? 0);
-            gl.uniform1f(this.uniforms['u_morphFactor'], (obj as any).morphFactor ?? 0.0);
-            gl.uniform1i(this.uniforms['u_orientation'], orientMap[obj.orientation] ?? 0);
+            gl.uniform1i(this.uniforms['u_shapeType'], WebGLRenderer.SHAPE_MAP[obj.shapeType] ?? 0);
+            gl.uniform1i(this.uniforms['u_shapeTypeNext'], WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0);
+            gl.uniform1f(this.uniforms['u_morphFactor'], obj.morphFactor);
+            gl.uniform1i(this.uniforms['u_orientation'], WebGLRenderer.ORIENT_MAP[obj.orientation] ?? 0);
 
             const c1 = this.hexToRgb(obj.color1);
             const c2 = this.hexToRgb(obj.color2);

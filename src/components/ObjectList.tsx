@@ -1,6 +1,7 @@
 import React from 'react';
 import { useSceneStore } from '../store/sceneStore';
 import { AddObjectButton } from './AddObjectButton';
+import './ObjectList.css';
 
 export const ObjectList: React.FC = () => {
     const {

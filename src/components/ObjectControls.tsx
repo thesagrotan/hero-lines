@@ -1,6 +1,7 @@
-import { useControls, folder } from 'leva';
+import { useControls } from 'leva';
 import { useSceneStore } from '../store/sceneStore';
 import { useEffect } from 'react';
+import { objectOnChange, objectOnChangeVec3 } from '../utils/levaHelpers';
 
 export const ObjectControls = () => {
     const selectedObjectId = useSceneStore((s) => s.selectedObjectId);
@@ -14,173 +15,68 @@ export const ObjectControls = () => {
             position: {
                 value: { x: 0, y: 0, z: 0 },
                 step: 0.1,
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && (v.x !== currentObj.position.x || v.y !== currentObj.position.y || v.z !== currentObj.position.z)) {
-                        updateObject(selId, { position: v });
-                    }
-                }
+                onChange: objectOnChangeVec3('position', updateObject),
             },
             dimensions: {
                 value: { x: 1, y: 1, z: 1 },
                 step: 0.05,
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && (v.x !== currentObj.dimensions.x || v.y !== currentObj.dimensions.y || v.z !== currentObj.dimensions.z)) {
-                        updateObject(selId, { dimensions: v });
-                    }
-                }
+                onChange: objectOnChangeVec3('dimensions', updateObject),
             },
             rotation: {
                 value: { x: 0, y: 0, z: 0 },
                 step: 1,
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && (v.x !== currentObj.rotation.x || v.y !== currentObj.rotation.y || v.z !== currentObj.rotation.z)) {
-                        updateObject(selId, { rotation: v });
-                    }
-                }
+                onChange: objectOnChangeVec3('rotation', updateObject),
             },
             shapeType: {
                 value: 'Box',
                 options: ['Box', 'Sphere', 'Cone', 'Torus', 'Capsule', 'Cylinder'],
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.shapeType) {
-                        updateObject(selId, { shapeType: v as any });
-                    }
-                }
+                onChange: objectOnChange('shapeType', updateObject),
             },
             borderRadius: {
                 value: 0.1, min: 0, max: 1, step: 0.01,
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.borderRadius) {
-                        updateObject(selId, { borderRadius: v });
-                    }
-                }
+                onChange: objectOnChange('borderRadius', updateObject),
             },
             numLines: {
                 value: 30, min: 1, max: 100, step: 1,
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.numLines) {
-                        updateObject(selId, { numLines: v });
-                    }
-                }
+                onChange: objectOnChange('numLines', updateObject),
             },
             thickness: {
                 value: 0.01, min: 0.001, max: 0.1, step: 0.001,
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.thickness) {
-                        updateObject(selId, { thickness: v });
-                    }
-                }
+                onChange: objectOnChange('thickness', updateObject),
             },
             orientation: {
                 value: 'Horizontal',
                 options: ['Horizontal', 'Vertical', 'Depth', 'Diagonal'],
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.orientation) {
-                        updateObject(selId, { orientation: v as any });
-                    }
-                }
+                onChange: objectOnChange('orientation', updateObject),
             },
             speed: {
                 value: 0.8, min: 0, max: 5, step: 0.1,
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.speed) {
-                        updateObject(selId, { speed: v });
-                    }
-                }
+                onChange: objectOnChange('speed', updateObject),
             },
             longevity: {
                 value: 0.4, min: 0.05, max: 2, step: 0.05,
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.longevity) {
-                        updateObject(selId, { longevity: v });
-                    }
-                }
+                onChange: objectOnChange('longevity', updateObject),
             },
             ease: {
                 value: 0.5, min: 0, max: 1, step: 0.1,
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.ease) {
-                        updateObject(selId, { ease: v });
-                    }
-                }
+                onChange: objectOnChange('ease', updateObject),
             },
             timeNoise: {
                 value: 0.5, min: 0, max: 2, step: 0.05,
                 label: 'Timing Noise',
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.timeNoise) {
-                        updateObject(selId, { timeNoise: v });
-                    }
-                }
+                onChange: objectOnChange('timeNoise', updateObject),
             },
             color1: {
                 value: '#db5a00',
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.color1) {
-                        updateObject(selId, { color1: v });
-                    }
-                }
+                onChange: objectOnChange('color1', updateObject),
             },
             color2: {
                 value: '#101010',
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.color2) {
-                        updateObject(selId, { color2: v });
-                    }
-                }
+                onChange: objectOnChange('color2', updateObject),
             },
             rimColor: {
                 value: '#1a66cc',
-                onChange: (v) => {
-                    const selId = useSceneStore.getState().selectedObjectId;
-                    if (!selId) return;
-                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
-                    if (currentObj && v !== currentObj.rimColor) {
-                        updateObject(selId, { rimColor: v });
-                    }
-                }
+                onChange: objectOnChange('rimColor', updateObject),
             },
         }),
         []

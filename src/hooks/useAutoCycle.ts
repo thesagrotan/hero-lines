@@ -5,37 +5,13 @@ import { DEVICE_TEMPLATES } from '../data/deviceTemplates';
 export const useAutoCycle = () => {
     const {
         selectedObjectId,
-        updateObject,
         scene,
-        setScene,
-        triggerTransition
+        applyDeviceTemplate
     } = useSceneStore();
 
-    const timeoutRef = useRef<any>(null);
+    const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const currentIndexRef = useRef(0);
     const names = Object.keys(DEVICE_TEMPLATES);
-
-    const applyTemplate = (name: string) => {
-        const t = DEVICE_TEMPLATES[name];
-        if (!t || !selectedObjectId) return;
-
-        // Trigger transition animation in the store
-        triggerTransition(selectedObjectId, scene.transitionSpeed);
-
-        // Update scene settings
-        setScene({
-            camera: t.camera,
-            zoom: t.zoom
-        });
-
-        // Update object settings
-        updateObject(selectedObjectId, {
-            dimensions: t.dimensions,
-            borderRadius: t.borderRadius,
-            shapeType: t.shapeType,
-            orientation: t.orientation
-        });
-    };
 
     useEffect(() => {
         if (!scene.autoCycle.enabled || !selectedObjectId) {
@@ -53,7 +29,7 @@ export const useAutoCycle = () => {
 
             // Getting fresh values from store to ensure we use the latest settings
             const { scene } = useSceneStore.getState();
-            applyTemplate(nextName);
+            applyDeviceTemplate(nextName);
 
             const totalDuration = scene.transitionSpeed + scene.autoCycle.pauseTime;
             timeoutRef.current = setTimeout(cycle, totalDuration);
@@ -62,7 +38,7 @@ export const useAutoCycle = () => {
         // When enabled, start first transition immediately
         const nextIndex = (currentIndexRef.current + 1) % names.length;
         currentIndexRef.current = nextIndex;
-        applyTemplate(names[nextIndex]);
+        applyDeviceTemplate(names[nextIndex]);
 
         const totalDuration = scene.transitionSpeed + scene.autoCycle.pauseTime;
         timeoutRef.current = setTimeout(cycle, totalDuration);

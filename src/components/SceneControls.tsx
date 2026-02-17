@@ -7,10 +7,11 @@ export const SceneControls = () => {
 
     const [, set] = useControls(() => ({
         camera: {
-            value: scene.camera,
+            value: { x: scene.camera.x, y: scene.camera.y, z: scene.camera.z },
             step: 0.1,
             onChange: (v: any) => {
-                if (v.x !== scene.camera.x || v.y !== scene.camera.y || v.z !== scene.camera.z) {
+                const current = useSceneStore.getState().scene.camera;
+                if (v.x !== current.x || v.y !== current.y || v.z !== current.z) {
                     setScene({ camera: v });
                 }
             }
@@ -19,32 +20,32 @@ export const SceneControls = () => {
             value: scene.zoom,
             min: 0.1, max: 2.0, step: 0.05,
             onChange: (v: any) => {
-                if (v !== scene.zoom) setScene({ zoom: v });
+                if (v !== useSceneStore.getState().scene.zoom) setScene({ zoom: v });
             }
         },
         bgColor: {
             value: scene.bgColor,
             onChange: (v: any) => {
-                if (v !== scene.bgColor) setScene({ bgColor: v });
+                if (v !== useSceneStore.getState().scene.bgColor) setScene({ bgColor: v });
             }
         },
         transitionSpeed: {
             value: scene.transitionSpeed, min: 100, max: 2000, step: 50, label: 'Duration (ms)',
             onChange: (v: any) => {
-                if (v !== scene.transitionSpeed) setScene({ transitionSpeed: v });
+                if (v !== useSceneStore.getState().scene.transitionSpeed) setScene({ transitionSpeed: v });
             }
         },
         transitionEase: {
             value: scene.transitionEase, options: ['Ease In-Out', 'Ease In', 'Ease Out', 'Linear'], label: 'Easing',
             onChange: (v: any) => {
-                if (v !== scene.transitionEase) setScene({ transitionEase: v as any });
+                if (v !== useSceneStore.getState().scene.transitionEase) setScene({ transitionEase: v as any });
             }
         },
         theme: {
             value: scene.theme,
             options: ['dark', 'light'],
             onChange: (v: any) => {
-                if (v !== scene.theme) {
+                if (v !== useSceneStore.getState().scene.theme) {
                     const bgColor = v === 'light' ? '#f5f5f7' : '#000000';
                     setScene({ theme: v, bgColor });
                 }
@@ -54,8 +55,9 @@ export const SceneControls = () => {
             'Auto Cycle': {
                 value: scene.autoCycle.enabled,
                 onChange: (v: any) => {
-                    if (v !== scene.autoCycle.enabled) {
-                        setScene({ autoCycle: { ...scene.autoCycle, enabled: v } });
+                    const { autoCycle } = useSceneStore.getState().scene;
+                    if (v !== autoCycle.enabled) {
+                        setScene({ autoCycle: { ...autoCycle, enabled: v } });
                     }
                 }
             },
@@ -63,13 +65,14 @@ export const SceneControls = () => {
                 value: scene.autoCycle.pauseTime,
                 min: 500, max: 5000, step: 100, label: 'Pause (ms)',
                 onChange: (v: any) => {
-                    if (v !== scene.autoCycle.pauseTime) {
-                        setScene({ autoCycle: { ...scene.autoCycle, pauseTime: v } });
+                    const { autoCycle } = useSceneStore.getState().scene;
+                    if (v !== autoCycle.pauseTime) {
+                        setScene({ autoCycle: { ...autoCycle, pauseTime: v } });
                     }
                 }
             }
         })
-    } as any), []); // Stable panel
+    }), []); // Stable panel
 
     // Sync store changes back to Leva (from templates, resets, etc.)
     useEffect(() => {
@@ -82,7 +85,7 @@ export const SceneControls = () => {
             theme: scene.theme,
             'Auto Cycle': scene.autoCycle.enabled,
             'Pause Time': scene.autoCycle.pauseTime,
-        });
+        } as any);
     }, [scene.camera, scene.zoom, scene.bgColor, scene.transitionSpeed, scene.transitionEase, scene.theme, scene.autoCycle.enabled, scene.autoCycle.pauseTime, set]);
 
     return null;

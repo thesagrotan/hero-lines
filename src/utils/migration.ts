@@ -1,4 +1,5 @@
-import { SceneState, SceneObject, createDefaultObject } from '../types';
+import { SceneState, SceneObject } from '../types';
+import { createDefaultObject } from './objectFactory';
 
 export interface SceneDataV2 {
     version: 2;

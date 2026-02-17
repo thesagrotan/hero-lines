@@ -1,40 +1,15 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useSceneStore } from '../store/sceneStore';
 import { DEVICE_TEMPLATES } from '../data/deviceTemplates';
+import './DeviceBar.css';
 
 export const DeviceBar: React.FC = () => {
     const {
         selectedObjectId,
-        updateObject,
         scene,
-        setScene,
-        triggerTransition,
-        toggleAutoCycle
+        toggleAutoCycle,
+        applyDeviceTemplate
     } = useSceneStore();
-
-    const applyTemplate = (name: string) => {
-        const t = DEVICE_TEMPLATES[name];
-        if (!t || !selectedObjectId) return;
-
-        // Trigger transition animation in the store
-        triggerTransition(selectedObjectId, scene.transitionSpeed);
-
-        // Update scene settings
-        setScene({
-            camera: t.camera,
-            zoom: t.zoom
-        });
-
-        // Update object settings
-        updateObject(selectedObjectId, {
-            position: t.position,
-            dimensions: t.dimensions,
-            borderRadius: t.borderRadius,
-            rotation: t.rotation,
-            shapeType: t.shapeType,
-            orientation: t.orientation
-        });
-    };
 
     const isAutoCycling = scene.autoCycle.enabled;
 
@@ -44,7 +19,7 @@ export const DeviceBar: React.FC = () => {
                 <button
                     key={name}
                     className="template-btn"
-                    onClick={() => applyTemplate(name)}
+                    onClick={() => applyDeviceTemplate(name)}
                     disabled={isAutoCycling || !selectedObjectId}
                 >
                     <span className="template-icon">

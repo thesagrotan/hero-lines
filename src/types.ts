@@ -41,31 +41,25 @@ export interface SceneState {
     theme: 'dark' | 'light';
 }
 
+export interface RenderableObject extends SceneObject {
+    shapeTypeNext: ShapeType;
+    morphFactor: number;
+}
+
+export interface TransitionSnapshot extends Pick<SceneObject, 'position' | 'dimensions' | 'borderRadius' | 'rotation' | 'shapeType'> {
+    camera: Vector3;
+    zoom: number;
+}
+
+export interface TransitionState {
+    objectId: string;
+    duration: number;
+    timestamp: number;
+    from: TransitionSnapshot | null;
+}
+
 export interface PropertyRow {
     id: string;
     name: string;
     type: string;
-}
-
-export function createDefaultObject(id: string, name: string): SceneObject {
-    return {
-        id,
-        name,
-        visible: true,
-        position: { x: 0, y: 0, z: 0 },
-        dimensions: { x: 1, y: 1, z: 1 },
-        rotation: { x: 0, y: 0, z: 0 },
-        shapeType: 'Box',
-        borderRadius: 0.1,
-        orientation: 'Horizontal',
-        numLines: 30,
-        thickness: 0.01,
-        speed: 1.0,
-        longevity: 0.4,
-        ease: 0.5,
-        color1: '#db5a00',
-        color2: '#454545',
-        rimColor: '#101010',
-        timeNoise: 0.5,
-    };
 }

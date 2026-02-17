@@ -1,0 +1,59 @@
+.template-bar {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--panel-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    box-shadow: 0 4px 30px var(--shadow-color);
+    z-index: 10;
+    transition: all 0.3s ease;
+}
+
+.template-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 14px;
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.template-btn:hover {
+    background: var(--btn-bg-hover);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px var(--shadow-color);
+}
+
+.light-theme .template-btn:hover {
+    border-color: rgba(0, 0, 0, 0.2);
+}
+
+.template-btn:active {
+    transform: translateY(0);
+    background: var(--panel-bg-hover);
+}
+
+.template-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.template-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    letter-spacing: 0.04em;
+    font-family: 'Courier New', Courier, monospace;
+    text-transform: uppercase;
+}

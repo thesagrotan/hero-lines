@@ -1,13 +1,13 @@
-import { SceneObject, SceneState } from '../types';
+import { SceneObject, SceneState, Vector3 } from '../types';
 
 export interface DeviceTemplate {
-    dimensions: { x: number; y: number; z: number };
+    dimensions: Vector3;
     borderRadius: number;
     shapeType: SceneObject['shapeType'];
     orientation: SceneObject['orientation'];
-    position: { x: number; y: number; z: number };
-    rotation: { x: number; y: number; z: number };
-    camera: { x: number; y: number; z: number };
+    position: Vector3;
+    rotation: Vector3;
+    camera: Vector3;
     zoom: number;
 }
 

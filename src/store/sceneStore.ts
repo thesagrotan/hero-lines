@@ -1,5 +1,8 @@
 import { create } from 'zustand';
-import { SceneObject, SceneState, createDefaultObject } from '../types';
+import { SceneObject, SceneState, TransitionState } from '../types';
+import { createNewDefaultObject } from '../utils/objectFactory';
+import { createTransitionSnapshot } from '../utils/transitionUtils';
+import { DEVICE_TEMPLATES } from '../data/deviceTemplates';
 
 interface SceneStore {
     // Scene-level
@@ -18,21 +21,9 @@ interface SceneStore {
     getSelectedObject: () => SceneObject | undefined;
 
     // Transitions
-    lastTransition: {
-        objectId: string,
-        duration: number,
-        timestamp: number,
-        from: {
-            position: { x: number, y: number, z: number },
-            dimensions: { x: number, y: number, z: number },
-            borderRadius: number,
-            rotation: { x: number, y: number, z: number },
-            shapeType: string,
-            camera: { x: number, y: number, z: number },
-            zoom: number
-        } | null
-    } | null;
+    lastTransition: TransitionState | null;
     triggerTransition: (objectId: string, duration: number) => void;
+    applyDeviceTemplate: (templateName: string) => void;
 }
 
 const INITIAL_SCENE_STATE: SceneState = {
@@ -71,8 +62,6 @@ const INITIAL_OBJECT: SceneObject = {
     timeNoise: 0,
 };
 
-
-
 export const useSceneStore = create<SceneStore>((set, get) => ({
     scene: INITIAL_SCENE_STATE,
     objects: [INITIAL_OBJECT],
@@ -95,13 +84,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         const id = crypto.randomUUID();
         const state = get();
         const name = `Object ${state.objects.length + 1}`;
-        const newObject = createDefaultObject(id, name);
-        // Add some random offset
-        newObject.position = {
-            x: (Math.random() - 0.5) * 4,
-            y: (Math.random() - 0.5) * 4,
-            z: (Math.random() - 0.5) * 4,
-        };
+        const newObject = createNewDefaultObject(id, name);
 
         set((state) => ({
             objects: [...state.objects, newObject],
@@ -154,16 +137,33 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
                 objectId,
                 duration,
                 timestamp: Date.now(),
-                from: obj ? {
-                    position: { ...obj.position },
-                    dimensions: { ...obj.dimensions },
-                    borderRadius: obj.borderRadius,
-                    rotation: { ...obj.rotation },
-                    shapeType: obj.shapeType,
-                    camera: { ...scene.camera },
-                    zoom: scene.zoom
-                } : null
+                from: obj ? createTransitionSnapshot(obj, scene) : null
             }
+        });
+    },
+
+    applyDeviceTemplate: (templateName) => {
+        const { selectedObjectId, scene, triggerTransition, setScene, updateObject } = get();
+        const t = DEVICE_TEMPLATES[templateName];
+        if (!t || !selectedObjectId) return;
+
+        // Trigger transition animation in the store
+        triggerTransition(selectedObjectId, scene.transitionSpeed);
+
+        // Update scene settings
+        setScene({
+            camera: t.camera,
+            zoom: t.zoom
+        });
+
+        // Update object settings
+        updateObject(selectedObjectId, {
+            position: t.position,
+            dimensions: t.dimensions,
+            borderRadius: t.borderRadius,
+            rotation: t.rotation,
+            shapeType: t.shapeType,
+            orientation: t.orientation
         });
     },
 }));
