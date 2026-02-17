@@ -1,4 +1,4 @@
-import { parseSvgToSdfTexture } from '../utils/svgParser';
+import { parseSvgToSdfTextureAsync } from '../utils/svgParser';
 
 /**
  * Manages the lifecycle of SVG SDF textures.
@@ -9,25 +9,32 @@ export class SvgSdfManager {
     private cachedSdf: Float32Array | null = null;
     private resolution: number;
 
-    constructor(resolution: number = 256) {
+    constructor(resolution: number = 512) {
         this.resolution = resolution;
     }
 
     /**
      * Get the SDF for the given SVG string.
      * Returns cached result if the SVG hasn't changed.
+     * If not cached, triggers async load and returns null until ready.
      */
     getSdf(svgString: string): Float32Array | null {
-        if (svgString === this.cachedSvgString && this.cachedSdf) {
+        if (svgString === this.cachedSvgString) {
             return this.cachedSdf;
         }
 
-        const sdf = parseSvgToSdfTexture(svgString, this.resolution);
-        if (sdf) {
-            this.cachedSvgString = svgString;
-            this.cachedSdf = sdf;
-        }
-        return sdf;
+        // Start loading new SVG
+        this.cachedSvgString = svgString;
+        this.cachedSdf = null;
+
+        parseSvgToSdfTextureAsync(svgString, this.resolution).then(sdf => {
+            // Only update if current request is still valid (user hasn't switched)
+            if (this.cachedSvgString === svgString) {
+                this.cachedSdf = sdf;
+            }
+        });
+
+        return null;
     }
 
     getResolution(): number {

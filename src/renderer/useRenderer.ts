@@ -30,7 +30,7 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
         let svgSdfManager: SvgSdfManager;
         try {
             rendererRef.current = new WebGLRenderer(canvas, vsSource, fsSource);
-            svgSdfManager = new SvgSdfManager(256);
+            svgSdfManager = new SvgSdfManager(512);
         } catch (err) {
             console.error('Failed to initialize WebGL renderer:', err);
             return;
