@@ -29,7 +29,7 @@ export const ObjectControls = () => {
             },
             shapeType: {
                 value: 'Box',
-                options: ['Box', 'Sphere', 'Cone', 'Torus', 'Capsule', 'Cylinder'],
+                options: ['Box', 'Sphere', 'Cone', 'Torus', 'Capsule', 'Cylinder', 'SVG'],
                 onChange: objectOnChange('shapeType', updateObject),
             },
             borderRadius: {

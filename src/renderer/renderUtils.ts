@@ -10,6 +10,7 @@ export function buildRenderableObjects(objects: SceneObject[]): RenderableObject
         position: { ...obj.position },
         dimensions: { ...obj.dimensions },
         rotation: { ...obj.rotation },
+        svgData: obj.svgData ? { ...obj.svgData } : undefined,
         shapeTypeNext: obj.shapeType,
         morphFactor: 0.0
     }));

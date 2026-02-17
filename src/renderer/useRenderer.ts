@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import { useSceneStore } from '../store/sceneStore';
 import { WebGLRenderer } from './WebGLRenderer';
+import { SvgSdfManager } from './SvgSdfManager';
 import { vsSource, fsSource } from '../shaders';
 import { TransitionSnapshot, RenderableObject, ShapeType } from '../types';
 import { interpolateTransition, createTransitionSnapshot } from '../utils/transitionUtils';
@@ -26,8 +27,10 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
         if (!canvas) return;
 
         // Initialize renderer
+        let svgSdfManager: SvgSdfManager;
         try {
             rendererRef.current = new WebGLRenderer(canvas, vsSource, fsSource);
+            svgSdfManager = new SvgSdfManager(256);
         } catch (err) {
             console.error('Failed to initialize WebGL renderer:', err);
             return;
@@ -100,6 +103,17 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
                             rotation: { ...targetObj.rotation }
                         });
                     }
+                }
+            }
+
+            // Upload SVG SDF texture if any object needs it
+            const svgObj = renderedObjects.find(
+                o => o.visible && (o.shapeType === 'SVG' || o.shapeTypeNext === 'SVG') && o.svgData?.svgString
+            );
+            if (svgObj?.svgData?.svgString && rendererRef.current) {
+                const sdf = svgSdfManager.getSdf(svgObj.svgData.svgString);
+                if (sdf) {
+                    rendererRef.current.uploadSvgSdfTexture(sdf, svgSdfManager.getResolution());
                 }
             }
 

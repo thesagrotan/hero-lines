@@ -4,7 +4,12 @@ export interface Vector3 {
     z: number;
 }
 
-export type ShapeType = 'Box' | 'Sphere' | 'Cone' | 'Torus' | 'Capsule' | 'Cylinder';
+export type ShapeType = 'Box' | 'Sphere' | 'Cone' | 'Torus' | 'Capsule' | 'Cylinder' | 'SVG';
+
+export interface SvgData {
+    svgString: string;
+    extrusionDepth: number;
+}
 export type Orientation = 'Horizontal' | 'Vertical' | 'Depth' | 'Diagonal';
 
 export interface SceneObject {
@@ -26,6 +31,7 @@ export interface SceneObject {
     color2: string;
     rimColor: string;
     timeNoise: number;
+    svgData?: SvgData;
 }
 
 export interface SceneState {

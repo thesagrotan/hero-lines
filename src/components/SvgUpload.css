@@ -1,0 +1,103 @@
+.svg-upload-panel {
+    position: fixed;
+    top: 10px;
+    right: 310px;
+    z-index: 100;
+    background: var(--panel-bg, rgba(30, 30, 30, 0.92));
+    border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.08));
+    border-radius: 10px;
+    padding: 12px 16px;
+    backdrop-filter: blur(12px);
+    min-width: 200px;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--text-primary, #e0e0e0);
+}
+
+.svg-upload-header {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 10px;
+    opacity: 0.6;
+}
+
+.svg-upload-btn {
+    width: 100%;
+    padding: 8px 12px;
+    background: linear-gradient(135deg, #3a3a4a, #2a2a3a);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 10px;
+}
+
+.svg-upload-btn:hover {
+    background: linear-gradient(135deg, #4a4a5a, #3a3a4a);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.svg-upload-btn:active {
+    transform: scale(0.98);
+}
+
+.svg-upload-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.svg-upload-control label {
+    font-size: 11px;
+    opacity: 0.7;
+    white-space: nowrap;
+}
+
+.svg-upload-control input[type="range"] {
+    flex: 1;
+    height: 4px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    outline: none;
+}
+
+.svg-upload-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #6a8cff;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.svg-upload-value {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.7;
+    min-width: 32px;
+    text-align: right;
+}
+
+/* Light theme overrides */
+.light-theme .svg-upload-panel {
+    background: rgba(245, 245, 247, 0.92);
+    border-color: rgba(0, 0, 0, 0.08);
+    color: #1a1a1a;
+}
+
+.light-theme .svg-upload-btn {
+    background: linear-gradient(135deg, #e8e8f0, #d8d8e0);
+    border-color: rgba(0, 0, 0, 0.1);
+    color: #1a1a1a;
+}
+
+.light-theme .svg-upload-btn:hover {
+    background: linear-gradient(135deg, #d8d8e0, #c8c8d0);
+}

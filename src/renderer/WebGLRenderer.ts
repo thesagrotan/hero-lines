@@ -1,4 +1,5 @@
 import { SceneState, RenderableObject } from '../types';
+import { SDF_SPREAD } from '../utils/svgParser';
 
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -8,8 +9,11 @@ export class WebGLRenderer {
     private uniforms: Record<string, WebGLUniformLocation> = {};
     private quadBuffer: WebGLBuffer;
 
+    private svgSdfTexture: WebGLTexture | null = null;
+    private svgSdfResolution: number = 0;
+
     private static readonly SHAPE_MAP: Record<string, number> = {
-        Box: 0, Sphere: 1, Cone: 2, Torus: 3, Capsule: 4, Cylinder: 5
+        Box: 0, Sphere: 1, Cone: 2, Torus: 3, Capsule: 4, Cylinder: 5, SVG: 6
     };
     private static readonly ORIENT_MAP: Record<string, number> = {
         Horizontal: 0, Vertical: 1, Depth: 2, Diagonal: 3
@@ -38,7 +42,9 @@ export class WebGLRenderer {
             'u_time', 'u_resolution', 'u_camPos', 'u_position', 'u_boxSize', 'u_rot',
             'u_borderRadius', 'u_borderThickness', 'u_speed', 'u_trailLength',
             'u_ease', 'u_color1', 'u_color2', 'u_rimColor', 'u_numLines',
-            'u_shapeType', 'u_shapeTypeNext', 'u_morphFactor', 'u_orientation', 'u_bgColor', 'u_timeNoise'
+            'u_shapeType', 'u_shapeTypeNext', 'u_morphFactor', 'u_orientation', 'u_bgColor', 'u_timeNoise',
+            'u_svgSdfTex', 'u_svgExtrusionDepth', 'u_hasSvgSdf',
+            'u_svgSpread', 'u_svgResolution'
         ];
 
         uniformNames.forEach(name => {
@@ -73,6 +79,31 @@ export class WebGLRenderer {
             throw new Error(info || 'Shader compile error');
         }
         return shader;
+    }
+
+    /**
+     * Upload a signed distance field texture for SVG extrusion.
+     */
+    public uploadSvgSdfTexture(sdfData: Float32Array, resolution: number): void {
+        const gl = this.gl;
+
+        if (!this.svgSdfTexture) {
+            this.svgSdfTexture = gl.createTexture();
+        }
+
+        gl.bindTexture(gl.TEXTURE_2D, this.svgSdfTexture);
+        gl.texImage2D(
+            gl.TEXTURE_2D, 0, gl.R32F,
+            resolution, resolution, 0,
+            gl.RED, gl.FLOAT, sdfData
+        );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
+        this.svgSdfResolution = resolution;
     }
 
     public renderFrame(scene: SceneState, objects: RenderableObject[], time: number) {
@@ -120,6 +151,20 @@ export class WebGLRenderer {
             gl.uniform1f(this.uniforms['u_morphFactor'], obj.morphFactor);
             gl.uniform1i(this.uniforms['u_orientation'], WebGLRenderer.ORIENT_MAP[obj.orientation] ?? 0);
 
+            // SVG SDF texture binding
+            const needsSvg = obj.shapeType === 'SVG' || obj.shapeTypeNext === 'SVG';
+            if (needsSvg && this.svgSdfTexture) {
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.svgSdfTexture);
+                gl.uniform1i(this.uniforms['u_svgSdfTex'], 0);
+                gl.uniform1i(this.uniforms['u_hasSvgSdf'], 1);
+                gl.uniform1f(this.uniforms['u_svgExtrusionDepth'], obj.svgData?.extrusionDepth ?? 0.5);
+                gl.uniform1f(this.uniforms['u_svgSpread'], SDF_SPREAD);
+                gl.uniform1f(this.uniforms['u_svgResolution'], this.svgSdfResolution);
+            } else {
+                gl.uniform1i(this.uniforms['u_hasSvgSdf'], 0);
+            }
+
             const c1 = this.hexToRgb(obj.color1);
             const c2 = this.hexToRgb(obj.color2);
             const rc = this.hexToRgb(obj.rimColor);
@@ -147,5 +192,8 @@ export class WebGLRenderer {
     public dispose() {
         this.gl.deleteProgram(this.program);
         this.gl.deleteBuffer(this.quadBuffer);
+        if (this.svgSdfTexture) {
+            this.gl.deleteTexture(this.svgSdfTexture);
+        }
     }
 }

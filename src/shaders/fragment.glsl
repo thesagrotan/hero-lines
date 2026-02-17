@@ -22,6 +22,11 @@ uniform int u_orientation;
 uniform vec3 u_bgColor;
 uniform vec3 u_position;
 uniform float u_timeNoise;
+uniform sampler2D u_svgSdfTex;
+uniform float u_svgExtrusionDepth;
+uniform int u_hasSvgSdf;
+uniform float u_svgSpread;
+uniform float u_svgResolution;
 
 float hash(float n) {
     return fract(sin(n) * 43758.5453123);
@@ -77,6 +82,38 @@ float sdRoundBox(vec3 p, vec3 b, float r) {
     return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
 }
 
+float sdSvgExtrude(vec3 p, vec3 boxSize, int orient) {
+    // Select which 2D plane to project onto and which axis to extrude along
+    vec2 uv2d;
+    float extAxis;
+    vec2 planeSize;
+    if (orient == 1) {          // Vertical: extrude along Y
+        uv2d = p.xz;
+        planeSize = boxSize.xz;
+        extAxis = p.y / max(boxSize.y, 0.001);
+    } else if (orient == 2) {   // Depth: extrude along Z
+        uv2d = p.xy;
+        planeSize = boxSize.xy;
+        extAxis = p.z / max(boxSize.z, 0.001);
+    } else {                    // Horizontal (default): extrude along X
+        uv2d = p.yz;
+        planeSize = boxSize.yz;
+        extAxis = p.x / max(boxSize.x, 0.001);
+    }
+    // Map from object space to [0,1] UV space
+    float scaleAxis = max(planeSize.x, planeSize.y);
+    vec2 texUV = (uv2d / scaleAxis) * 0.5 + 0.5;
+    // Sample the 2D SDF texture (negative = inside)
+    // The raw texture values are normalized to the 'spread', not the object side.
+    // We must scale it back to world space:
+    // raw_value * spread_pixels / resolution_pixels * object_scale
+    float rawSdf = texture(u_svgSdfTex, texUV).r;
+    float sdf2d = rawSdf * (u_svgSpread / u_svgResolution) * scaleAxis;
+    // Extrusion: combine 2D distance with depth cap
+    float extDist = (abs(extAxis) - u_svgExtrusionDepth) * max(boxSize.x, max(boxSize.y, boxSize.z));
+    return max(sdf2d, extDist);
+}
+
 float getShapeDist(vec3 p, vec3 boxSize, float radius, int shapeType) {
     // To keep the shape within boxSize even with borderRadius (radius),
     // we shrink the inner shape by that radius.
@@ -87,9 +124,12 @@ float getShapeDist(vec3 p, vec3 boxSize, float radius, int shapeType) {
     if (shapeType == 3) return sdTorus(p, innerSize, u_orientation) - radius;
     if (shapeType == 4) return sdCapsule(p, innerSize, u_orientation) - radius;
     if (shapeType == 5) return sdCylinder(p, innerSize, u_orientation) - radius;
+    if (shapeType == 6 && u_hasSvgSdf == 1) return sdSvgExtrude(p, boxSize, u_orientation);
     
     return sdRoundBox(p, innerSize, radius);
 }
+
+
 
 float map(vec3 p, vec3 boxSize, float radius) {
     float d1 = getShapeDist(p, boxSize, radius, u_shapeType);
