@@ -29,7 +29,7 @@ export class WebGLRenderer {
             'u_time', 'u_resolution', 'u_camPos', 'u_position', 'u_boxSize', 'u_rot',
             'u_borderRadius', 'u_borderThickness', 'u_speed', 'u_trailLength',
             'u_ease', 'u_color1', 'u_color2', 'u_rimColor', 'u_numLines',
-            'u_shapeType', 'u_orientation', 'u_bgColor'
+            'u_shapeType', 'u_shapeTypeNext', 'u_morphFactor', 'u_orientation', 'u_bgColor', 'u_timeNoise'
         ];
 
         uniformNames.forEach(name => {
@@ -106,8 +106,11 @@ export class WebGLRenderer {
             gl.uniform1f(this.uniforms['u_trailLength'], obj.longevity); // longevity maps to trailLength
             gl.uniform1f(this.uniforms['u_ease'], obj.ease);
             gl.uniform1f(this.uniforms['u_numLines'], obj.numLines);
+            gl.uniform1f(this.uniforms['u_timeNoise'], obj.timeNoise);
 
             gl.uniform1i(this.uniforms['u_shapeType'], shapeMap[obj.shapeType] ?? 0);
+            gl.uniform1i(this.uniforms['u_shapeTypeNext'], shapeMap[(obj as any).shapeTypeNext] ?? 0);
+            gl.uniform1f(this.uniforms['u_morphFactor'], (obj as any).morphFactor ?? 0.0);
             gl.uniform1i(this.uniforms['u_orientation'], orientMap[obj.orientation] ?? 0);
 
             const c1 = this.hexToRgb(obj.color1);

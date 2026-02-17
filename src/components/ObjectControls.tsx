@@ -137,6 +137,18 @@ export const ObjectControls = () => {
                     }
                 }
             },
+            timeNoise: {
+                value: 0.5, min: 0, max: 2, step: 0.05,
+                label: 'Timing Noise',
+                onChange: (v) => {
+                    const selId = useSceneStore.getState().selectedObjectId;
+                    if (!selId) return;
+                    const currentObj = useSceneStore.getState().objects.find(o => o.id === selId);
+                    if (currentObj && v !== currentObj.timeNoise) {
+                        updateObject(selId, { timeNoise: v });
+                    }
+                }
+            },
             color1: {
                 value: '#0d66ff',
                 onChange: (v) => {
@@ -192,6 +204,7 @@ export const ObjectControls = () => {
             color1: obj.color1,
             color2: obj.color2,
             rimColor: obj.rimColor,
+            timeNoise: obj.timeNoise,
         });
     }, [obj, set]);
 

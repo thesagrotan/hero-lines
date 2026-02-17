@@ -1,45 +1,35 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { useSceneStore } from '../store/sceneStore';
 import { WebGLRenderer } from './WebGLRenderer';
 import { vsSource, fsSource } from '../shaders';
 import { interpolateProperty } from '../utils/interpolation';
 
-export function useRenderer(canvasRef: React.RefObject<HTMLCanvasElement>, timelineRef: React.RefObject<any>) {
+export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>, timelineRef: RefObject<any>) {
     const rendererRef = useRef<WebGLRenderer | null>(null);
     const requestRef = useRef<number>();
 
     const transitionRef = useRef({
         startTime: 0,
-        duration: 600,
-        fromRotY: 0,
-        extraSpin: 360,
-        easeType: 'Ease In-Out',
+        duration: 4000,
+        fromPos: { x: 0, y: 0, z: 0 },
+        fromRot: { x: 0, y: 0, z: 0 },
+        toRotY: 0,
         fromDims: { x: 0, y: 0, z: 0 },
         fromBR: 0,
         fromCam: { x: 0, y: 0, z: 0 },
         fromZoom: 1,
+        fromShapeType: 'Box' as any,
+        toShapeType: 'Box' as any,
         active: false
     });
 
-    const lastTransition = useSceneStore(s => s.lastTransition);
+    // Track the actual rendered state in a ref so transitions can pick up exactly where we left off
+    const lastRenderedState = useRef<{
+        objects: Record<string, { dimensions: any, borderRadius: number, rotation: any, shapeType: any }>,
+        scene: { camera: any, zoom: number }
+    } | null>(null);
 
-    useEffect(() => {
-        if (!lastTransition) return;
-        const tr = transitionRef.current;
-        const state = useSceneStore.getState();
-        const obj = state.objects.find(o => o.id === lastTransition.objectId);
-        if (!obj) return;
-
-        tr.startTime = performance.now();
-        tr.duration = lastTransition.duration;
-        tr.fromRotY = obj.rotation.y;
-        tr.fromDims = { ...obj.dimensions };
-        tr.fromBR = obj.borderRadius;
-        tr.fromCam = { ...state.scene.camera };
-        tr.fromZoom = state.scene.zoom;
-        tr.easeType = state.scene.transitionEase;
-        tr.active = true;
-    }, [lastTransition]);
+    const lastTransitionHandled = useRef<number>(0);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -55,10 +45,42 @@ export function useRenderer(canvasRef: React.RefObject<HTMLCanvasElement>, timel
 
         const render = (now: number) => {
             const state = useSceneStore.getState();
-            const { scene, objects, isPlaying, timelineRows, setCurrentTime } = state;
+            const { scene, objects, isPlaying, timelineRows, setCurrentTime, lastTransition } = state;
+
+            // Handle new transition trigger
+            if (lastTransition && lastTransition.timestamp > lastTransitionHandled.current) {
+                const tr = transitionRef.current;
+                const obj = objects.find(o => o.id === lastTransition.objectId);
+                if (obj && lastTransition.from) {
+                    const from = lastTransition.from;
+
+                    tr.startTime = now;
+                    tr.duration = lastTransition.duration;
+
+                    // Capture FROM state from the store's snapshot
+                    tr.fromPos = { ...from.position };
+                    tr.fromRot = { ...from.rotation };
+                    tr.toRotY = tr.fromRot.y + 180;
+
+                    tr.fromDims = { ...from.dimensions };
+                    tr.fromBR = from.borderRadius;
+                    tr.fromShapeType = from.shapeType;
+                    tr.toShapeType = obj.shapeType;
+
+                    tr.fromCam = { ...from.camera };
+                    tr.fromZoom = from.zoom;
+
+                    tr.active = true;
+                    lastTransitionHandled.current = lastTransition.timestamp;
+
+                    console.log(`Transition started for ${obj.name}: ${tr.fromShapeType} -> ${tr.toShapeType}`);
+                    console.log(`  Pos: [${tr.fromPos.x.toFixed(2)}, ${tr.fromPos.y.toFixed(2)}, ${tr.fromPos.z.toFixed(2)}] -> [${obj.position.x.toFixed(2)}, ${obj.position.y.toFixed(2)}, ${obj.position.z.toFixed(2)}]`);
+                    console.log(`  Dims: [${tr.fromDims.x.toFixed(2)}, ${tr.fromDims.y.toFixed(2)}, ${tr.fromDims.z.toFixed(2)}] -> [${obj.dimensions.x.toFixed(2)}, ${obj.dimensions.y.toFixed(2)}, ${obj.dimensions.z.toFixed(2)}]`);
+                }
+            }
 
             let time = state.currentTime;
-
+            // ... (rest of the render function remains the same, except we use the local 'scene' and 'objects' variables)
             if (isPlaying && timelineRef.current) {
                 time = timelineRef.current.getTime();
                 setCurrentTime(time);
@@ -66,10 +88,13 @@ export function useRenderer(canvasRef: React.RefObject<HTMLCanvasElement>, timel
 
             // Map objects with interpolated values
             const interpolatedObjects = objects.map(obj => {
-                if (!isPlaying) return obj;
-
-                return {
+                const baseObj = isPlaying ? {
                     ...obj,
+                    position: {
+                        x: interpolateProperty(timelineRows, obj.id, 'posX', time, obj.position.x),
+                        y: interpolateProperty(timelineRows, obj.id, 'posY', time, obj.position.y),
+                        z: interpolateProperty(timelineRows, obj.id, 'posZ', time, obj.position.z),
+                    },
                     dimensions: {
                         x: interpolateProperty(timelineRows, obj.id, 'boxX', time, obj.dimensions.x),
                         y: interpolateProperty(timelineRows, obj.id, 'boxY', time, obj.dimensions.y),
@@ -89,23 +114,30 @@ export function useRenderer(canvasRef: React.RefObject<HTMLCanvasElement>, timel
                     color1: interpolateProperty(timelineRows, obj.id, 'color1', time, obj.color1),
                     color2: interpolateProperty(timelineRows, obj.id, 'color2', time, obj.color2),
                     rimColor: interpolateProperty(timelineRows, obj.id, 'rimColor', time, obj.rimColor),
+                } : {
+                    ...obj,
+                    position: { ...obj.position },
+                    dimensions: { ...obj.dimensions },
+                    rotation: { ...obj.rotation }
+                };
+
+                // Add transient properties for morphing
+                return {
+                    ...baseObj,
+                    shapeTypeNext: baseObj.shapeType,
+                    morphFactor: 0.0
                 };
             });
 
-            // Scene-level interpolations (mapped to object-level in the store for now)
-            // Note: In a true multi-object setup, scene properties should be separate tracks.
-            // For now, we take them from the timeline rows if they match the main object ID 
-            // or we could have a special 'scene' objectId.
-            // Let's assume they are still tied to INITIAL_OBJECT_ID for now to maintain parity.
             const mainObjectId = objects[0]?.id || 'main-obj';
 
             const interpolatedScene = {
                 ...scene,
-                camera: {
-                    x: isPlaying ? interpolateProperty(timelineRows, mainObjectId, 'camX', time, scene.camera.x) : scene.camera.x,
-                    y: isPlaying ? interpolateProperty(timelineRows, mainObjectId, 'camY', time, scene.camera.y) : scene.camera.y,
-                    z: isPlaying ? interpolateProperty(timelineRows, mainObjectId, 'camZ', time, scene.camera.z) : scene.camera.z,
-                },
+                camera: isPlaying ? {
+                    x: interpolateProperty(timelineRows, mainObjectId, 'camX', time, scene.camera.x),
+                    y: interpolateProperty(timelineRows, mainObjectId, 'camY', time, scene.camera.y),
+                    z: interpolateProperty(timelineRows, mainObjectId, 'camZ', time, scene.camera.z),
+                } : { ...scene.camera },
                 zoom: isPlaying ? interpolateProperty(timelineRows, mainObjectId, 'zoom', time, scene.zoom) : scene.zoom,
                 bgColor: isPlaying ? interpolateProperty(timelineRows, mainObjectId, 'bgColor', time, scene.bgColor) : scene.bgColor,
             };
@@ -115,26 +147,70 @@ export function useRenderer(canvasRef: React.RefObject<HTMLCanvasElement>, timel
             if (tr.active) {
                 const elapsed = now - tr.startTime;
                 const progress = Math.min(elapsed / tr.duration, 1);
-                let ease = progress;
 
-                if (tr.easeType === 'Ease In-Out') {
-                    ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-                } else if (tr.easeType === 'Ease In') {
-                    ease = progress * progress * progress;
-                } else if (tr.easeType === 'Ease Out') {
-                    ease = 1 - Math.pow(1 - progress, 3);
+                // Use Linear easing as requested for continuous flow
+                const ease = progress;
+
+                // Smoothly interpolate camera and zoom during transition
+                interpolatedScene.camera.x = tr.fromCam.x + (interpolatedScene.camera.x - tr.fromCam.x) * ease;
+                interpolatedScene.camera.y = tr.fromCam.y + (interpolatedScene.camera.y - tr.fromCam.y) * ease;
+                interpolatedScene.camera.z = tr.fromCam.z + (interpolatedScene.camera.z - tr.fromCam.z) * ease;
+                interpolatedScene.zoom = tr.fromZoom + (interpolatedScene.zoom - tr.fromZoom) * ease;
+
+                // Apply transition to active object
+                const targetObj: any = interpolatedObjects.find(o => o.id === lastTransition?.objectId) || interpolatedObjects[0];
+                if (targetObj) {
+                    targetObj.position.x = tr.fromPos.x + (targetObj.position.x - tr.fromPos.x) * ease;
+                    targetObj.position.y = tr.fromPos.y + (targetObj.position.y - tr.fromPos.y) * ease;
+                    targetObj.position.z = tr.fromPos.z + (targetObj.position.z - tr.fromPos.z) * ease;
+
+                    targetObj.rotation.x = tr.fromRot.x + (targetObj.rotation.x - tr.fromRot.x) * ease;
+                    targetObj.rotation.y = tr.fromRot.y + (tr.toRotY - tr.fromRot.y) * ease;
+                    targetObj.rotation.z = tr.fromRot.z + (targetObj.rotation.z - tr.fromRot.z) * ease;
+
+                    targetObj.dimensions.x = tr.fromDims.x + (targetObj.dimensions.x - tr.fromDims.x) * ease;
+                    targetObj.dimensions.y = tr.fromDims.y + (targetObj.dimensions.y - tr.fromDims.y) * ease;
+                    targetObj.dimensions.z = tr.fromDims.z + (targetObj.dimensions.z - tr.fromDims.z) * ease;
+                    targetObj.borderRadius = tr.fromBR + (targetObj.borderRadius - tr.fromBR) * ease;
+
+                    // Morphing setup
+                    targetObj.shapeType = tr.fromShapeType;
+                    targetObj.shapeTypeNext = tr.toShapeType;
+                    targetObj.morphFactor = ease;
                 }
 
-                // Apply transition to FIRST object for now (parity with legacy behavior)
-                if (interpolatedObjects[0]) {
-                    interpolatedObjects[0].rotation.y += tr.extraSpin * ease;
-                    interpolatedObjects[0].dimensions.x = tr.fromDims.x + (interpolatedObjects[0].dimensions.x - tr.fromDims.x) * ease;
-                    interpolatedObjects[0].dimensions.y = tr.fromDims.y + (interpolatedObjects[0].dimensions.y - tr.fromDims.y) * ease;
-                    interpolatedObjects[0].dimensions.z = tr.fromDims.z + (interpolatedObjects[0].dimensions.z - tr.fromDims.z) * ease;
+                if (progress >= 1) {
+                    tr.active = false;
+                    // Persist the rotation in the store to avoid snapping back
+                    if (lastTransition) {
+                        const s = useSceneStore.getState();
+                        const obj = s.objects.find(o => o.id === lastTransition.objectId);
+                        if (obj) {
+                            s.updateObject(obj.id, {
+                                rotation: {
+                                    x: tr.fromRot.x + (obj.rotation.x - tr.fromRot.x),
+                                    y: tr.toRotY,
+                                    z: tr.fromRot.z + (obj.rotation.z - tr.fromRot.z)
+                                }
+                            });
+                        }
+                    }
                 }
-
-                if (progress >= 1) tr.active = false;
             }
+
+            // Save the current state for the next frame's potential transition start
+            lastRenderedState.current = {
+                scene: { camera: { ...interpolatedScene.camera }, zoom: interpolatedScene.zoom },
+                objects: interpolatedObjects.reduce((acc, obj) => {
+                    acc[obj.id] = {
+                        dimensions: { ...obj.dimensions },
+                        borderRadius: obj.borderRadius,
+                        rotation: { ...obj.rotation },
+                        shapeType: (obj as any).shapeTypeNext // The target shape of this frame
+                    };
+                    return acc;
+                }, {} as any)
+            };
 
             rendererRef.current?.renderFrame(interpolatedScene, interpolatedObjects, now);
             requestRef.current = requestAnimationFrame(render);

@@ -25,6 +25,7 @@ export interface SceneObject {
     color1: string;
     color2: string;
     rimColor: string;
+    timeNoise: number;
 }
 
 export interface SceneState {
@@ -33,6 +34,10 @@ export interface SceneState {
     bgColor: string;
     transitionSpeed: number;
     transitionEase: string;
+    autoCycle: {
+        enabled: boolean;
+        pauseTime: number;
+    };
 }
 
 export interface TimelineAction {
@@ -76,5 +81,6 @@ export function createDefaultObject(id: string, name: string): SceneObject {
         color1: '#0d66ff',
         color2: '#4cccff',
         rimColor: '#1a66cc',
+        timeNoise: 0.5,
     };
 }

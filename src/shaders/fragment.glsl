@@ -16,9 +16,20 @@ uniform vec3 u_color2;
 uniform vec3 u_rimColor;
 uniform float u_numLines;
 uniform int u_shapeType; 
+uniform int u_shapeTypeNext;
+uniform float u_morphFactor;
 uniform int u_orientation;
 uniform vec3 u_bgColor;
 uniform vec3 u_position;
+uniform float u_timeNoise;
+
+float hash(float n) {
+    return fract(sin(n) * 43758.5453123);
+}
+
+float sdSphere(vec3 p, float r) {
+    return length(p) - r;
+}
 
 float sdEllipsoid(vec3 p, vec3 r) {
     float k0 = length(p / r);
@@ -41,10 +52,17 @@ float sdTorus(vec3 p, vec3 h, int orient) {
     return (length(q) - 0.2) * min(h_o.x, min(h_o.y, h_o.z));
 }
 
-float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
-    vec3 pa = p - a, ba = b - a;
-    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-    return length(pa - ba * h) - r;
+float sdCapsule(vec3 p, vec3 h, int orient) {
+    vec3 p_o = (orient == 1) ? p.yxz : (orient == 2) ? p.zyx : p.xyz;
+    vec3 h_o = (orient == 1) ? h.yxz : (orient == 2) ? h.zyx : h.xyz;
+    // Radius is the smaller of the two perpendicular axes
+    float r = min(h_o.y, h_o.z);
+    // Half-height of the cylindrical part
+    float hh = max(0.0, h_o.x - r);
+    vec3 pa = p_o - vec3(-hh, 0, 0);
+    vec3 ba = vec3(2.0 * hh, 0, 0);
+    float h_c = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h_c) - r;
 }
 
 float sdCylinder(vec3 p, vec3 h, int orient) {
@@ -59,22 +77,25 @@ float sdRoundBox(vec3 p, vec3 b, float r) {
     return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
 }
 
+float getShapeDist(vec3 p, vec3 boxSize, float radius, int shapeType) {
+    // To keep the shape within boxSize even with borderRadius (radius),
+    // we shrink the inner shape by that radius.
+    vec3 innerSize = max(boxSize - vec3(radius), vec3(0.0001));
+    
+    if (shapeType == 1) return sdEllipsoid(p, innerSize) - radius;
+    if (shapeType == 2) return sdCone(p, innerSize, u_orientation) - radius;
+    if (shapeType == 3) return sdTorus(p, innerSize, u_orientation) - radius;
+    if (shapeType == 4) return sdCapsule(p, innerSize, u_orientation) - radius;
+    if (shapeType == 5) return sdCylinder(p, innerSize, u_orientation) - radius;
+    
+    return sdRoundBox(p, innerSize, radius);
+}
+
 float map(vec3 p, vec3 boxSize, float radius) {
-    float d = 0.0;
-    if (u_shapeType == 1) d = sdEllipsoid(p, boxSize);
-    else if (u_shapeType == 2) d = sdCone(p, boxSize, u_orientation);
-    else if (u_shapeType == 3) d = sdTorus(p, boxSize, u_orientation);
-    else if (u_shapeType == 4) {
-        vec3 a = (u_orientation == 1) ? vec3(0, -boxSize.y, 0) : (u_orientation == 2) ? vec3(0, 0, -boxSize.z) : vec3(-boxSize.x, 0, 0);
-        vec3 b = (u_orientation == 1) ? vec3(0, boxSize.y, 0) : (u_orientation == 2) ? vec3(0, 0, boxSize.z) : vec3(boxSize.x, 0, 0);
-        float r_cap = (u_orientation == 1 || u_orientation == 2) ? boxSize.x : boxSize.y;
-        d = sdCapsule(p, a, b, r_cap * 0.5);
-    } else if (u_shapeType == 5) d = sdCylinder(p, boxSize, u_orientation);
-    else {
-        vec3 innerSize = max(boxSize - vec3(radius), vec3(0.001));
-        return sdRoundBox(p, innerSize, radius);
-    }
-    return d - radius;
+    float d1 = getShapeDist(p, boxSize, radius, u_shapeType);
+    if (u_morphFactor <= 0.0) return d1;
+    float d2 = getShapeDist(p, boxSize, radius, u_shapeTypeNext);
+    return mix(d1, d2, u_morphFactor);
 }
 
 vec3 calcNormal(vec3 p, vec3 boxSize, float radius) {
@@ -107,7 +128,10 @@ vec3 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
     if (u_orientation == 1) { p1 = pUse.x; p2 = pUse.z; b1 = boxSize.x; b2 = boxSize.z; }
     else if (u_orientation == 2) { p1 = pUse.x; p2 = pUse.y; b1 = boxSize.x; b2 = boxSize.y; }
     float perimeter = (abs(p2 * b1) > abs(p1 * b2)) ? ((p2 > 0.0) ? (b1 + p1) : (3.0 * b1 + 2.0 * b2 - p1)) : ((p1 > 0.0) ? (2.0 * b1 + b2 - p2) : (4.0 * b1 + 3.0 * b2 + p2));
-    float progress = mod(time * u_speed - layerIdx * 0.02, 3.0), dist = fract(progress - (perimeter / (4.0 * (b1 + b2) + 0.001)));
+    
+    float noise = hash(layerIdx) * u_timeNoise;
+    float progress = mod(time * u_speed - layerIdx * 0.02 + noise, 3.0);
+    float dist = fract(progress - (perimeter / (4.0 * (b1 + b2) + 0.001)));
     float isActive = (dist < u_trailLength) ? pow(smoothstep(0.0, max(0.01, u_ease), 1.0 - abs(1.0 - (dist / u_trailLength) * 2.0)), 1.5) : 0.0;
     vec3 n = calcNormal(p, boxSize, u_borderRadius);
     float dotV = (u_orientation == 1) ? abs(n.y) : (u_orientation == 2) ? abs(n.z) : (u_orientation == 3) ? abs(dot(n, vec3(0.577))) : abs(n.x);

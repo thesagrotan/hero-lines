@@ -5,6 +5,7 @@ interface SceneStore {
     // Scene-level
     scene: SceneState;
     setScene: (patch: Partial<SceneState>) => void;
+    toggleAutoCycle: () => void;
 
     // Objects
     objects: SceneObject[];
@@ -25,7 +26,20 @@ interface SceneStore {
     setCurrentTime: (time: number) => void;
 
     // Transitions
-    lastTransition: { objectId: string, duration: number, timestamp: number } | null;
+    lastTransition: {
+        objectId: string,
+        duration: number,
+        timestamp: number,
+        from: {
+            position: { x: number, y: number, z: number },
+            dimensions: { x: number, y: number, z: number },
+            borderRadius: number,
+            rotation: { x: number, y: number, z: number },
+            shapeType: string,
+            camera: { x: number, y: number, z: number },
+            zoom: number
+        } | null
+    } | null;
     triggerTransition: (objectId: string, duration: number) => void;
 }
 
@@ -33,8 +47,12 @@ const INITIAL_SCENE_STATE: SceneState = {
     camera: { x: 5.0, y: 4.5, z: 8.0 },
     zoom: 1.0,
     bgColor: '#000000',
-    transitionSpeed: 600,
-    transitionEase: 'Ease In-Out',
+    transitionSpeed: 4000,
+    transitionEase: 'Linear',
+    autoCycle: {
+        enabled: false,
+        pauseTime: 0,
+    }
 };
 
 const INITIAL_OBJECT_ID = 'main-obj';
@@ -57,6 +75,7 @@ const INITIAL_OBJECT: SceneObject = {
     color1: '#0d66ff',
     color2: '#4cccff',
     rimColor: '#1a66cc',
+    timeNoise: 0.5,
 };
 
 // Initial timeline data from App.tsx, mapped to the initial object
@@ -97,6 +116,15 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
 
     setScene: (patch) => set((state) => ({
         scene: { ...state.scene, ...patch }
+    })),
+    toggleAutoCycle: () => set((state) => ({
+        scene: {
+            ...state.scene,
+            autoCycle: {
+                ...state.scene.autoCycle,
+                enabled: !state.scene.autoCycle.enabled
+            }
+        }
     })),
 
     addObject: () => {
@@ -187,7 +215,26 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     setTimelineRows: (rows) => set({ timelineRows: rows }),
 
     lastTransition: null,
-    triggerTransition: (objectId, duration) => set({
-        lastTransition: { objectId, duration, timestamp: Date.now() }
-    }),
+    triggerTransition: (objectId, duration) => {
+        const state = get();
+        const obj = state.objects.find(o => o.id === objectId);
+        const scene = state.scene;
+
+        set({
+            lastTransition: {
+                objectId,
+                duration,
+                timestamp: Date.now(),
+                from: obj ? {
+                    position: { ...obj.position },
+                    dimensions: { ...obj.dimensions },
+                    borderRadius: obj.borderRadius,
+                    rotation: { ...obj.rotation },
+                    shapeType: obj.shapeType,
+                    camera: { ...scene.camera },
+                    zoom: scene.zoom
+                } : null
+            }
+        });
+    },
 }));

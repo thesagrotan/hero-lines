@@ -6,8 +6,10 @@ import { TimelinePanel } from './components/TimelinePanel'
 import { ObjectList } from './components/ObjectList'
 import { FPSCounter } from './components/FPSCounter'
 import { RendererView } from './components/RendererView'
+import { useAutoCycle } from './hooks/useAutoCycle'
 
 export default function App() {
+    useAutoCycle();
     const timelineRef = useRef<any>(null);
 
     return (
