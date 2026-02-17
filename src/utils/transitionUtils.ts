@@ -36,6 +36,11 @@ export function interpolateTransition(
         },
         zoom: from.zoom + (to.zoom - from.zoom) * ease,
         shapeType: from.shapeType, // Base shape type is 'from' during transition for morphing start
+        bendAmount: from.bendAmount + (to.bendAmount - from.bendAmount) * ease,
+        bendAngle: from.bendAngle + (to.bendAngle - from.bendAngle) * ease,
+        bendAxis: progress < 0.5 ? from.bendAxis : to.bendAxis,
+        bendOffset: from.bendOffset + (to.bendOffset - from.bendOffset) * ease,
+        bendLimit: from.bendLimit + (to.bendLimit - from.bendLimit) * ease,
     };
 }
 
@@ -53,6 +58,11 @@ export function createTransitionSnapshot(
         borderRadius: obj.borderRadius,
         rotation: { ...obj.rotation },
         shapeType: obj.shapeType,
+        bendAmount: obj.bendAmount,
+        bendAngle: obj.bendAngle,
+        bendAxis: obj.bendAxis,
+        bendOffset: obj.bendOffset,
+        bendLimit: obj.bendLimit,
         camera: { ...scene.camera },
         zoom: scene.zoom,
     };

@@ -27,6 +27,11 @@ uniform float u_svgExtrusionDepth;
 uniform int u_hasSvgSdf;
 uniform float u_svgSpread;
 uniform float u_svgResolution;
+uniform float u_bendAmount;
+uniform float u_bendAngle;
+uniform float u_bendOffset;
+uniform float u_bendLimit;
+uniform int u_bendAxis;
 
 float hash(float n) {
     return fract(sin(n) * 43758.5453123);
@@ -82,6 +87,55 @@ float sdRoundBox(vec3 p, vec3 b, float r) {
     return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
 }
 
+vec3 opBend(in vec3 p, in float k, in float angle, in int axis, in float offset, in float limit) {
+    if (abs(k) < 0.001) return p;
+    
+    // 1. Reorient so the bend spine is Y
+    vec3 q = p;
+    if (axis == 0) q = p.yzx; // X spine -> Y spine
+    else if (axis == 2) q = p.xzy; // Z spine -> Y spine
+    
+    // 2. Rotate around Y by 'angle' to align bend plane with XY
+    float a = angle * 0.01745329;
+    float sa = sin(a), ca = cos(a);
+    vec2 xz = mat2(ca, -sa, sa, ca) * q.xz;
+    q.xz = xz;
+    
+    // 3. Apply bending in the XY plane
+    // Apply offset and limit to the bend region
+    float y = q.y - offset;
+    float yclamped = clamp(y, -limit, limit);
+    
+    float theta = k * yclamped;
+    float c = cos(theta);
+    float s = sin(theta);
+    mat2 m = mat2(c, -s, s, c);
+    
+    // Transform the point. Points outside the clamped region follow the tangent
+    vec2 xy = q.xy;
+    xy.x -= 1.0/k;
+    xy = m * xy;
+    xy.x += 1.0/k;
+    
+    // Straight parts (outside limit)
+    if (y > limit) {
+        xy += vec2(-s, c) * (y - limit);
+    } else if (y < -limit) {
+        xy += vec2(s, c) * (y + limit);
+    }
+    
+    q.xy = xy;
+    
+    // 4. Inverse rotate around Y
+    xz = mat2(ca, sa, -sa, ca) * q.xz;
+    q.xz = xz;
+    
+    // 5. Inverse reorient
+    if (axis == 0) return q.zxy;
+    else if (axis == 2) return q.yxz;
+    return q;
+}
+
 float sdSvgExtrude(vec3 p, vec3 boxSize, int orient) {
     // Select which 2D plane to project onto and which axis to extrude along
     vec2 uv2d;
@@ -132,9 +186,10 @@ float getShapeDist(vec3 p, vec3 boxSize, float radius, int shapeType) {
 
 
 float map(vec3 p, vec3 boxSize, float radius) {
-    float d1 = getShapeDist(p, boxSize, radius, u_shapeType);
+    vec3 pBent = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+    float d1 = getShapeDist(pBent, boxSize, radius, u_shapeType);
     if (u_morphFactor <= 0.0) return d1;
-    float d2 = getShapeDist(p, boxSize, radius, u_shapeTypeNext);
+    float d2 = getShapeDist(pBent, boxSize, radius, u_shapeTypeNext);
     return mix(d1, d2, u_morphFactor);
 }
 
@@ -205,8 +260,9 @@ void main() {
         float t = tBox.x; bool hit = false; vec3 p;
         for(int i=0; i<64; i++) { p = ro_l + rd * t; float d = map(p, u_boxSize, u_borderRadius); if(d < 0.001) { hit = true; break; } t += d; if(t > tBox.y) break; }
         if(hit) { 
-            vec4 surface = getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, false);
-            vec3 n = calcNormal(p, u_boxSize, u_borderRadius);
+            vec3 pBent = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+            vec4 surface = getSurfaceColor(pBent, u_boxSize, u_time, u_borderThickness, false);
+            vec3 n = calcNormal(pBent, u_boxSize, u_borderRadius);
             float rim = pow(1.0 - max(dot(-rd, n), 0.0), 3.0) * 0.4;
             vec3 rimRGB = u_rimColor * rim;
             

@@ -32,6 +32,11 @@ export interface SceneObject {
     rimColor: string;
     timeNoise: number;
     svgData?: SvgData;
+    bendAmount: number;
+    bendAngle: number;
+    bendAxis: 'X' | 'Y' | 'Z';
+    bendOffset: number;
+    bendLimit: number;
 }
 
 export interface SceneState {
@@ -45,6 +50,11 @@ export interface SceneState {
         pauseTime: number;
     };
     theme: 'dark' | 'light';
+    infinitePass: {
+        enabled: boolean;
+        speed: number;
+        spacing: number;
+    };
 }
 
 export interface RenderableObject extends SceneObject {
@@ -52,7 +62,7 @@ export interface RenderableObject extends SceneObject {
     morphFactor: number;
 }
 
-export interface TransitionSnapshot extends Pick<SceneObject, 'position' | 'dimensions' | 'borderRadius' | 'rotation' | 'shapeType'> {
+export interface TransitionSnapshot extends Pick<SceneObject, 'position' | 'dimensions' | 'borderRadius' | 'rotation' | 'shapeType' | 'bendAmount' | 'bendAngle' | 'bendAxis' | 'bendOffset' | 'bendLimit'> {
     camera: Vector3;
     zoom: number;
 }

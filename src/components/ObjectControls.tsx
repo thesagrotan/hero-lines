@@ -36,6 +36,32 @@ export const ObjectControls = () => {
                 value: 0.1, min: 0, max: 1, step: 0.01,
                 onChange: objectOnChange('borderRadius', updateObject),
             },
+            bendAmount: {
+                value: 0, min: -2, max: 2, step: 0.01,
+                label: 'Bend Amount',
+                onChange: objectOnChange('bendAmount', updateObject),
+            },
+            bendAngle: {
+                value: 0, min: 0, max: 360, step: 1,
+                label: 'Bend Angle',
+                onChange: objectOnChange('bendAngle', updateObject),
+            },
+            bendAxis: {
+                value: 'Y',
+                options: ['X', 'Y', 'Z'],
+                label: 'Bend Axis',
+                onChange: objectOnChange('bendAxis', updateObject),
+            },
+            bendOffset: {
+                value: 0, min: -2, max: 2, step: 0.01,
+                label: 'Bend Offset',
+                onChange: objectOnChange('bendOffset', updateObject),
+            },
+            bendLimit: {
+                value: 1, min: 0.1, max: 5, step: 0.01,
+                label: 'Bend Limit',
+                onChange: objectOnChange('bendLimit', updateObject),
+            },
             numLines: {
                 value: 30, min: 1, max: 100, step: 1,
                 onChange: objectOnChange('numLines', updateObject),
@@ -101,6 +127,11 @@ export const ObjectControls = () => {
             color2: obj.color2,
             rimColor: obj.rimColor,
             timeNoise: obj.timeNoise,
+            bendAmount: obj.bendAmount,
+            bendAngle: obj.bendAngle,
+            bendAxis: obj.bendAxis,
+            bendOffset: obj.bendOffset,
+            bendLimit: obj.bendLimit,
         });
     }, [obj, set]);
 

@@ -24,6 +24,8 @@ interface SceneStore {
     lastTransition: TransitionState | null;
     triggerTransition: (objectId: string, duration: number) => void;
     applyDeviceTemplate: (templateName: string) => void;
+    setupInfiniteDevicePass: () => void;
+    toggleInfinitePass: () => void;
 }
 
 const INITIAL_SCENE_STATE: SceneState = {
@@ -36,7 +38,12 @@ const INITIAL_SCENE_STATE: SceneState = {
         enabled: false,
         pauseTime: 0,
     },
-    theme: 'dark'
+    theme: 'dark',
+    infinitePass: {
+        enabled: false,
+        speed: 2.0,
+        spacing: 8.0
+    }
 };
 
 const INITIAL_OBJECT_ID = 'main-obj';
@@ -60,6 +67,11 @@ const INITIAL_OBJECT: SceneObject = {
     color2: '#454545',
     rimColor: '#101010',
     timeNoise: 0,
+    bendAmount: 0,
+    bendAngle: 0,
+    bendAxis: 'X',
+    bendOffset: 0,
+    bendLimit: 1.0,
 };
 
 export const useSceneStore = create<SceneStore>((set, get) => ({
@@ -143,9 +155,18 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     },
 
     applyDeviceTemplate: (templateName) => {
-        const { selectedObjectId, scene, triggerTransition, setScene, updateObject } = get();
+        const { selectedObjectId, scene, triggerTransition, setScene, updateObject, objects } = get();
         const t = DEVICE_TEMPLATES[templateName];
         if (!t || !selectedObjectId) return;
+
+        // If we were in infinite pass mode, reset to just this object
+        let newObjects = objects;
+        if (scene.infinitePass.enabled) {
+            const currentObj = objects.find(o => o.id === selectedObjectId);
+            if (currentObj) {
+                newObjects = [currentObj];
+            }
+        }
 
         // Trigger transition animation in the store
         triggerTransition(selectedObjectId, scene.transitionSpeed);
@@ -153,10 +174,15 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
         // Update scene settings
         setScene({
             camera: t.camera,
-            zoom: t.zoom
+            zoom: t.zoom,
+            infinitePass: {
+                ...scene.infinitePass,
+                enabled: false
+            }
         });
 
         // Update object settings
+        set({ objects: newObjects });
         updateObject(selectedObjectId, {
             position: t.position,
             dimensions: t.dimensions,
@@ -165,5 +191,66 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
             shapeType: t.shapeType,
             orientation: t.orientation
         });
+    },
+
+    setupInfiniteDevicePass: () => {
+        const { updateObject, setScene } = get();
+
+        // Use predefined device order for consistent feel
+        const deviceNames = Object.keys(DEVICE_TEMPLATES);
+        const newObjects: SceneObject[] = deviceNames.map((name, i) => {
+            const template = DEVICE_TEMPLATES[name];
+            return {
+                id: `pass-${name.toLowerCase()}`,
+                name: `Pass ${name}`,
+                visible: true,
+                position: { x: 0, y: 0, z: -i * 8.0 }, // Spread along Z
+                dimensions: template.dimensions,
+                rotation: template.rotation,
+                shapeType: template.shapeType,
+                borderRadius: template.borderRadius,
+                orientation: template.orientation,
+                numLines: 35,
+                thickness: 0.012,
+                speed: 0.8,
+                longevity: 0.6,
+                ease: 0.5,
+                color1: i % 2 === 0 ? '#db5a00' : '#00aedb',
+                color2: '#454545',
+                rimColor: '#101010',
+                timeNoise: 0.5,
+                bendAmount: 0,
+                bendAngle: 0,
+                bendAxis: 'Y',
+                bendOffset: 0,
+                bendLimit: 1.0,
+            };
+        });
+
+        set({
+            objects: newObjects,
+            selectedObjectId: newObjects[0].id,
+            scene: {
+                ...get().scene,
+                camera: { x: 8.0, y: 6.0, z: 12.0 },
+                zoom: 1.0,
+                infinitePass: {
+                    ...get().scene.infinitePass,
+                    enabled: true
+                }
+            }
+        });
+    },
+
+    toggleInfinitePass: () => {
+        set((state) => ({
+            scene: {
+                ...state.scene,
+                infinitePass: {
+                    ...state.scene.infinitePass,
+                    enabled: !state.scene.infinitePass.enabled
+                }
+            }
+        }));
     },
 }));

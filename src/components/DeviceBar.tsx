@@ -8,7 +8,9 @@ export const DeviceBar: React.FC = () => {
         selectedObjectId,
         scene,
         toggleAutoCycle,
-        applyDeviceTemplate
+        applyDeviceTemplate,
+        setupInfiniteDevicePass,
+        toggleInfinitePass
     } = useSceneStore();
 
     const isAutoCycling = scene.autoCycle.enabled;
@@ -28,6 +30,21 @@ export const DeviceBar: React.FC = () => {
                     <span className="template-label">{name}</span>
                 </button>
             ))}
+            <button
+                className={`template-btn ${scene.infinitePass.enabled ? 'active' : ''}`}
+                onClick={() => {
+                    if (scene.infinitePass.enabled) {
+                        toggleInfinitePass();
+                    } else {
+                        setupInfiniteDevicePass();
+                    }
+                }}
+                disabled={!selectedObjectId}
+                style={{ borderLeft: '1px solid #555' }}
+            >
+                <span className="template-icon">🎬</span>
+                <span className="template-label">{scene.infinitePass.enabled ? 'Stop Pass' : 'Device Pass'}</span>
+            </button>
             <button
                 className={`template-btn ${isAutoCycling ? 'active' : ''}`}
                 onClick={toggleAutoCycle}

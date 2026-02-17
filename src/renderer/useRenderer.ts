@@ -60,9 +60,38 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
 
             const renderedScene = {
                 ...scene,
-                camera: { ...scene.camera },
                 zoom: scene.zoom,
             };
+
+            // Infinite Pass Animation Logic
+            if (scene.infinitePass.enabled) {
+                const pass = scene.infinitePass;
+                const totalSpacing = pass.spacing * renderedObjects.length;
+                const offset = (now * 0.001 * pass.speed) % totalSpacing;
+
+                const focusZ = 0.0;
+                const rangeZ = totalSpacing * 0.5;
+
+                renderedObjects.forEach((obj, i) => {
+                    // Linear Z from -rangeZ to +rangeZ relative to focusZ
+                    let linearZ = (obj.position.z + offset) % totalSpacing;
+                    if (linearZ > totalSpacing * 0.5) linearZ -= totalSpacing;
+                    if (linearZ < -totalSpacing * 0.5) linearZ += totalSpacing;
+
+                    // Normalize linearZ to [-1, 1]
+                    const t = linearZ / (totalSpacing * 0.5);
+
+                    // Warp Z: Blend linear and cubic to prevent absolute clustering at the center
+                    // This ensures objects keep moving and don't overlap as easily
+                    const warpedT = (0.15 * t) + (0.85 * Math.pow(t, 3));
+                    obj.position.z = focusZ + warpedT * 25.0; // Increased visual stretch
+
+                    // Dynamic Rotation: Rotate more as it gets further from the focus
+                    const rotationIntensity = t * t * 45; // Max 45 degrees rotation at edges
+                    obj.rotation.y += rotationIntensity;
+                    obj.rotation.x += rotationIntensity * 0.5;
+                });
+            }
 
             // Transition logic
             const tr = transitionRef.current;

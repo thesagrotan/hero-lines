@@ -18,6 +18,9 @@ export class WebGLRenderer {
     private static readonly ORIENT_MAP: Record<string, number> = {
         Horizontal: 0, Vertical: 1, Depth: 2, Diagonal: 3
     };
+    private static readonly BEND_AXIS_MAP: Record<string, number> = {
+        X: 0, Y: 1, Z: 2
+    };
 
     constructor(canvas: HTMLCanvasElement, vsSource: string, fsSource: string) {
         const gl = canvas.getContext('webgl2', { alpha: false, antialias: true })!;
@@ -44,7 +47,8 @@ export class WebGLRenderer {
             'u_ease', 'u_color1', 'u_color2', 'u_rimColor', 'u_numLines',
             'u_shapeType', 'u_shapeTypeNext', 'u_morphFactor', 'u_orientation', 'u_bgColor', 'u_timeNoise',
             'u_svgSdfTex', 'u_svgExtrusionDepth', 'u_hasSvgSdf',
-            'u_svgSpread', 'u_svgResolution'
+            'u_svgSpread', 'u_svgResolution', 'u_bendAmount', 'u_bendAngle', 'u_bendAxis',
+            'u_bendOffset', 'u_bendLimit'
         ];
 
         uniformNames.forEach(name => {
@@ -149,6 +153,11 @@ export class WebGLRenderer {
             gl.uniform1f(this.uniforms['u_ease'], obj.ease);
             gl.uniform1f(this.uniforms['u_numLines'], obj.numLines);
             gl.uniform1f(this.uniforms['u_timeNoise'], obj.timeNoise);
+            gl.uniform1f(this.uniforms['u_bendAmount'], obj.bendAmount);
+            gl.uniform1f(this.uniforms['u_bendAngle'], obj.bendAngle);
+            gl.uniform1f(this.uniforms['u_bendOffset'], obj.bendOffset);
+            gl.uniform1f(this.uniforms['u_bendLimit'], obj.bendLimit);
+            gl.uniform1i(this.uniforms['u_bendAxis'], WebGLRenderer.BEND_AXIS_MAP[obj.bendAxis] ?? 1);
 
             gl.uniform1i(this.uniforms['u_shapeType'], WebGLRenderer.SHAPE_MAP[obj.shapeType] ?? 0);
             gl.uniform1i(this.uniforms['u_shapeTypeNext'], WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0);
