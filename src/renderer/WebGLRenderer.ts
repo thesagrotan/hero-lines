@@ -11,6 +11,9 @@ export class WebGLRenderer {
 
     private svgSdfTexture: WebGLTexture | null = null;
     private svgSdfResolution: number = 0;
+    private lastSdfData: Float32Array | null = null;
+
+    private colorCache: Map<string, [number, number, number]> = new Map();
 
     private static readonly SHAPE_MAP: Record<string, number> = {
         Box: 0, Sphere: 1, Cone: 2, Torus: 3, Capsule: 4, Cylinder: 5, SVG: 6, Laptop: 7
@@ -98,6 +101,11 @@ export class WebGLRenderer {
     public uploadSvgSdfTexture(sdfData: Float32Array, resolution: number): void {
         const gl = this.gl;
 
+        // Skip if data is the same
+        if (this.lastSdfData === sdfData && this.svgSdfResolution === resolution) {
+            return;
+        }
+
         if (!this.svgSdfTexture) {
             this.svgSdfTexture = gl.createTexture();
         }
@@ -119,6 +127,7 @@ export class WebGLRenderer {
         gl.bindTexture(gl.TEXTURE_2D, null);
 
         this.svgSdfResolution = resolution;
+        this.lastSdfData = sdfData;
     }
 
     public renderFrame(scene: SceneState, objects: RenderableObject[], time: number) {
@@ -224,10 +233,16 @@ export class WebGLRenderer {
     }
 
     private hexToRgb(hex: string): [number, number, number] {
+        const cached = this.colorCache.get(hex);
+        if (cached) return cached;
+
         const r = parseInt(hex.slice(1, 3), 16) / 255;
         const g = parseInt(hex.slice(3, 5), 16) / 255;
         const b = parseInt(hex.slice(5, 7), 16) / 255;
-        return [r, g, b];
+
+        const result: [number, number, number] = [r, g, b];
+        this.colorCache.set(hex, result);
+        return result;
     }
 
     public resize(width: number, height: number) {

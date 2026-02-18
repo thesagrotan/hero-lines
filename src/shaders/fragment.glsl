@@ -252,7 +252,10 @@ float map(vec3 p, vec3 boxSize, float radius) {
     vec3 pBent = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
     
     // Apply Pulse
-    float pulse = 1.0 + sin(u_time * u_pulseSpeed) * u_pulseIntensity;
+    float pulse = 1.0;
+    if (u_pulseIntensity > 0.0) {
+        pulse += sin(u_time * u_pulseSpeed) * u_pulseIntensity;
+    }
     vec3 pScaled = pBent / pulse;
     
     float d1;
@@ -309,7 +312,7 @@ vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
     return (tN > tF || tF < 0.0) ? vec2(-1.0) : vec2(tN, tF);
 }
 
-vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isBack) {
+vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isBack, vec3 n) {
     float sliceCoord = (u_orientation == 1) ? p.y : (u_orientation == 2) ? p.z : (u_orientation == 3) ? (p.x + p.y + p.z) * 0.57735 : p.x;
     float sliceRange = (u_orientation == 1) ? 2.0 * boxSize.y : (u_orientation == 2) ? 2.0 * boxSize.z : (u_orientation == 3) ? length(2.0 * boxSize) : 2.0 * boxSize.x;
     float norm = clamp((sliceCoord + sliceRange * 0.5) / sliceRange, 0.0, 1.0);
@@ -327,7 +330,7 @@ vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
     float progress = mod(time * u_speed - layerIdx * u_layerDelay + noiseVal, 3.0);
     float dist = fract(progress - (perimeter / (4.0 * (b1 + b2) + 0.001)));
     float isActive = (dist < u_trailLength) ? pow(smoothstep(0.0, max(0.01, u_ease), 1.0 - abs(1.0 - (dist / u_trailLength) * 2.0)), 1.5) : 0.0;
-    vec3 n = calcNormal(p, boxSize, u_borderRadius);
+    
     float dotV = (u_orientation == 1) ? abs(n.y) : (u_orientation == 2) ? abs(n.z) : (u_orientation == 3) ? abs(dot(n, vec3(0.577))) : abs(n.x);
     float lineAlpha = lineMask * isActive * smoothstep(0.1, 0.4, 1.0 - dotV);
     
@@ -358,8 +361,8 @@ vec3 render(vec3 ro, vec3 rd, vec3 ro_l, float tFar) {
         }
         if(hit) { 
             vec3 pBent = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
-            vec4 surface = getSurfaceColor(pBent, u_boxSize, u_time, u_borderThickness, false);
             vec3 n = calcNormal(pBent, u_boxSize, u_borderRadius);
+            vec4 surface = getSurfaceColor(pBent, u_boxSize, u_time, u_borderThickness, false, n);
             float rim = pow(1.0 - max(dot(-rd, n), 0.0), u_rimPower) * u_rimIntensity;
             vec3 rimRGB = u_rimColor * rim;
             
@@ -367,19 +370,24 @@ vec3 render(vec3 ro, vec3 rd, vec3 ro_l, float tFar) {
             alpha += surface.a + rim;
         }
         
-        vec3 ro_b = ro_l + rd * tBox.y, rd_b = -rd; float tb = 0.0; hit = false;
-        for(int i=0; i<64; i++) { 
-            p = ro_b + rd_b * tb; 
-            float d = map(p, u_boxSize, u_borderRadius); 
-            if(d < 0.001) { hit = true; break; } 
-            tb += d; 
-            if(tb > (tBox.y - tBox.x)) break; 
-        }
-        if(hit) {
-            vec3 pBentB = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
-            vec4 surfaceBack = getSurfaceColor(pBentB, u_boxSize, u_time, u_borderThickness, true);
-            col += surfaceBack.rgb * (1.0 - alpha); 
-            alpha += surfaceBack.a * (1.0 - alpha);
+        // Only do back pass if front is not fully opaque and we have budget
+        if (alpha < 0.95) {
+            vec3 ro_b = ro_l + rd * tBox.y, rd_b = -rd; float tb = 0.0; hit = false;
+            // Back pass uses fewer iterations
+            for(int i=0; i<32; i++) { 
+                p = ro_b + rd_b * tb; 
+                float d = map(p, u_boxSize, u_borderRadius); 
+                if(d < 0.001) { hit = true; break; } 
+                tb += d; 
+                if(tb > (tBox.y - tBox.x)) break; 
+            }
+            if(hit) {
+                vec3 pBentB = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+                vec3 nB = calcNormal(pBentB, u_boxSize, u_borderRadius);
+                vec4 surfaceBack = getSurfaceColor(pBentB, u_boxSize, u_time, u_borderThickness, true, nB);
+                col += surfaceBack.rgb * (1.0 - alpha); 
+                alpha += surfaceBack.a * (1.0 - alpha);
+            }
         }
     }
     return col;
