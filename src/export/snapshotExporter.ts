@@ -4,6 +4,17 @@ import { generateStandaloneHTML } from './templates/standalone.html';
 import { generateWebComponentJS } from './templates/webcomponent.js';
 
 /**
+ * Converts a hex color string to a [r, g, b] float array (0–1 range).
+ */
+function hexToRgbArray(hex: string): [number, number, number] {
+    return [
+        parseInt(hex.slice(1, 3), 16) / 255,
+        parseInt(hex.slice(3, 5), 16) / 255,
+        parseInt(hex.slice(5, 7), 16) / 255,
+    ];
+}
+
+/**
  * Strips editor-only fields from SceneState, keeping only rendering-relevant data.
  */
 function snapshotScene(scene: SceneState) {
@@ -11,6 +22,7 @@ function snapshotScene(scene: SceneState) {
         camera: { ...scene.camera },
         zoom: scene.zoom,
         bgColor: scene.bgColor,
+        bgColorRgb: hexToRgbArray(scene.bgColor),
     };
 }
 
@@ -34,9 +46,9 @@ function snapshotObjects(objects: SceneObject[]) {
                 speed: o.speed,
                 longevity: o.longevity,
                 ease: o.ease,
-                color1: o.color1,
-                color2: o.color2,
-                rimColor: o.rimColor,
+                color1: hexToRgbArray(o.color1),
+                color2: hexToRgbArray(o.color2),
+                rimColor: hexToRgbArray(o.rimColor),
                 timeNoise: o.timeNoise,
                 svgExtrusionDepth: o.svgExtrusionDepth,
                 rimIntensity: o.rimIntensity,

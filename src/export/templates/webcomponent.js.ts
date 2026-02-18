@@ -54,7 +54,7 @@ class HeroLinesSnapshot extends HTMLElement {
             <canvas></canvas>
         \`;
         const canvas = shadow.querySelector('canvas');
-        this._renderer = initSnapshot(canvas, SNAPSHOT, VS_SOURCE, FS_SOURCE, ${svgSdfModuleRef});
+        this._renderer = initSnapshot(canvas, SNAPSHOT, VS_SOURCE, FS_SOURCE, ${svgSdfModuleRef}, 1.0);
         if (!this._renderer) return;
 
         this._ro = new ResizeObserver(() => this._renderer.resize());

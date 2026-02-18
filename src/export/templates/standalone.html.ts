@@ -52,7 +52,7 @@ ${getSnapshotRendererSource()}
 // ── Boot ──
 (function() {
     const canvas = document.getElementById('c');
-    const renderer = initSnapshot(canvas, SNAPSHOT, VS_SOURCE, FS_SOURCE, ${svgSdfModuleRef});
+    const renderer = initSnapshot(canvas, SNAPSHOT, VS_SOURCE, FS_SOURCE, ${svgSdfModuleRef}, 1.0);
     if (!renderer) return;
 
     const ro = new ResizeObserver(() => renderer.resize());

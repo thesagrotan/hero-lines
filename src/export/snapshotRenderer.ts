@@ -12,14 +12,6 @@ const ORIENT_MAP = { Horizontal: 0, Vertical: 1, Depth: 2, Diagonal: 3 };
 const BEND_AXIS_MAP = { X: 0, Y: 1, Z: 2 };
 const COMPOSITE_MAP = { None: 0, Union: 1, Subtract: 2, Intersect: 3, SmoothUnion: 4 };
 
-function hexToRgb(hex) {
-    return [
-        parseInt(hex.slice(1, 3), 16) / 255,
-        parseInt(hex.slice(3, 5), 16) / 255,
-        parseInt(hex.slice(5, 7), 16) / 255
-    ];
-}
-
 function createShader(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
@@ -32,7 +24,86 @@ function createShader(gl, type, source) {
     return shader;
 }
 
-function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule) {
+// Compute a screen-space scissor rect for an object to avoid shading pixels outside its bounds.
+// Returns {x, y, w, h} in WebGL bottom-left coords, or null to use full screen.
+function calculateScissorRect(scene, obj, width, height) {
+    const iz = 1.0 / scene.zoom;
+    const camPos = [scene.camera.x * iz, scene.camera.y * iz, scene.camera.z * iz];
+
+    // Build inverse model rotation (transpose of rotZ * rotY * rotX)
+    const rx = obj._rotRad[0], ry = obj._rotRad[1], rz = obj._rotRad[2];
+    const sx = Math.sin(rx), cx = Math.cos(rx);
+    const sy = Math.sin(ry), cy = Math.cos(ry);
+    const sz = Math.sin(rz), cz = Math.cos(rz);
+
+    // rotX
+    const RX = [1,0,0, 0,cx,-sx, 0,sx,cx];
+    // rotY
+    const RY = [cy,0,sy, 0,1,0, -sy,0,cy];
+    // rotZ
+    const RZ = [cz,-sz,0, sz,cz,0, 0,0,1];
+
+    // M = rotZ * rotY * rotX  (column-major 3x3 as flat array)
+    function mul3(A, B) {
+        const R = new Array(9);
+        for (let r = 0; r < 3; r++)
+            for (let c = 0; c < 3; c++)
+                R[r*3+c] = A[r*3+0]*B[0*3+c] + A[r*3+1]*B[1*3+c] + A[r*3+2]*B[2*3+c];
+        return R;
+    }
+    const M = mul3(mul3(RZ, RY), RX);
+    // mI = transpose(M)
+    const mI = [M[0],M[3],M[6], M[1],M[4],M[7], M[2],M[5],M[8]];
+
+    function mv(m, v) { return [m[0]*v[0]+m[1]*v[1]+m[2]*v[2], m[3]*v[0]+m[4]*v[1]+m[5]*v[2], m[6]*v[0]+m[7]*v[1]+m[8]*v[2]]; }
+    function sub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+    function dot(a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+    function norm(v) { const l = Math.sqrt(dot(v,v)); return [v[0]/l, v[1]/l, v[2]/l]; }
+    function cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+
+    const ro_l = mv(mI, sub(camPos, [obj.position.x, obj.position.y, obj.position.z]));
+
+    const worldFwd = norm([-camPos[0], -camPos[1], -camPos[2]]);
+    const upBase = [0, 1, 0];
+    let worldRight = norm(cross(upBase, worldFwd));
+    if (Math.abs(dot(upBase, worldFwd)) > 0.99) worldRight = norm(cross([1,0,0], worldFwd));
+    const worldUp = cross(worldFwd, worldRight);
+
+    const fwd   = norm(mv(mI, worldFwd));
+    const right = norm(mv(mI, worldRight));
+    const up    = norm(mv(mI, worldUp));
+
+    const margin = 2.0;
+    const b = [obj.dimensions.x * margin, obj.dimensions.y * margin, obj.dimensions.z * margin];
+    const signs = [-1, 1];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
+    for (const bx of signs) for (const by of signs) for (const bz of signs) {
+        const p_obj = [bx*b[0], by*b[1], bz*b[2]];
+        const v = sub(p_obj, ro_l);
+        const dist = dot(v, fwd);
+        if (dist < 0.1) return null;
+        const uvX = dot(v, right) / dist;
+        const uvY = dot(v, up) / dist;
+        const px = uvX * height + 0.5 * width;
+        const py = uvY * height + 0.5 * height;
+        if (px < minX) minX = px;
+        if (px > maxX) maxX = px;
+        if (py < minY) minY = py;
+        if (py > maxY) maxY = py;
+    }
+
+    const pad = 10;
+    const chromPad = Math.abs(obj.chromaticAberration || 0) * height;
+    const x = Math.max(0, Math.floor(minX - pad - chromPad));
+    const y = Math.max(0, Math.floor(minY - pad));
+    const w = Math.min(width,  Math.ceil(maxX + pad + chromPad)) - x;
+    const h = Math.min(height, Math.ceil(maxY + pad)) - y;
+    return { x, y, w, h };
+}
+
+function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolutionScale) {
+    resolutionScale = resolutionScale || 1.0;
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: true });
     if (!gl) { console.error('WebGL2 not supported'); return null; }
 
@@ -77,20 +148,28 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule) {
     // Cache sampler location
     const svgTexLoc = gl.getUniformLocation(program, 'u_svgSdfTex');
 
-    // Fullscreen quad
+    // Fullscreen quad — stored in a VAO to avoid re-validating attribute state each draw
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
     const quadBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
         -1, -1, 1, -1, -1, 1,
         -1, 1, 1, -1, 1, 1
     ]), gl.STATIC_DRAW);
-
     const posLoc = gl.getAttribLocation(program, 'position');
     gl.enableVertexAttribArray(posLoc);
     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.SCISSOR_TEST);
+
+    // Set program and clear color once — they never change
+    gl.useProgram(program);
+    const bg = snapshot.scene.bgColorRgb;
+    gl.clearColor(bg[0], bg[1], bg[2], 1.0);
 
     // SVG SDF texture state
     let svgSdfTexture = null;
@@ -100,7 +179,6 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule) {
     // Check if any object needs SVG SDF
     const svgObj = snapshot.objects.find(o => o.visible && o.shapeType === 'SVG' && o.svgData && o.svgData.svgString);
     if (svgObj && svgSdfModule) {
-        const SDF_SPREAD = svgSdfModule.SDF_SPREAD;
         const sdfRes = svgSdfModule.resolution || 512;
         svgSdfResolution = sdfRes;
 
@@ -119,8 +197,63 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule) {
         });
     }
 
+    // Pre-normalize objects: compute rotation in radians and resolve optional fields once.
+    // This avoids per-frame fallback object creation (|| {x:0,y:0,z:0}) and DEG_TO_RAD math
+    // for fields that never change.
+    const objects = snapshot.objects.filter(o => o.visible).map(o => {
+        const sp = o.secondaryPosition   || { x: 0, y: 0, z: 0 };
+        const sr = o.secondaryRotation   || { x: 0, y: 0, z: 0 };
+        const sd = o.secondaryDimensions || { x: 1, y: 1, z: 1 };
+        return {
+            ...o,
+            // Pre-converted rotation in radians
+            _rotRad: [
+                (o.rotation.x || 0) * DEG_TO_RAD,
+                (o.rotation.y || 0) * DEG_TO_RAD,
+                (o.rotation.z || 0) * DEG_TO_RAD,
+            ],
+            // Resolved secondary fields
+            _spx: sp.x, _spy: sp.y, _spz: sp.z,
+            _srx: sr.x * DEG_TO_RAD, _sry: sr.y * DEG_TO_RAD, _srz: sr.z * DEG_TO_RAD,
+            _sdx: sd.x, _sdy: sd.y, _sdz: sd.z,
+            // Resolved scalar defaults
+            borderRadius:        o.borderRadius        || 0,
+            thickness:           o.thickness           || 0.05,
+            speed:               o.speed               || 1,
+            longevity:           o.longevity           || 0.5,
+            ease:                o.ease                || 0.1,
+            numLines:            o.numLines            || 10,
+            timeNoise:           o.timeNoise           || 0,
+            svgExtrusionDepth:   o.svgExtrusionDepth   || 0.5,
+            bendAmount:          o.bendAmount          || 0,
+            bendAngle:           o.bendAngle           || 0,
+            bendOffset:          o.bendOffset          || 0,
+            bendLimit:           o.bendLimit           || 10,
+            rimIntensity:        o.rimIntensity        || 0.4,
+            rimPower:            o.rimPower            || 3.0,
+            wireOpacity:         o.wireOpacity         || 0.1,
+            wireIntensity:       o.wireIntensity       || 0.1,
+            layerDelay:          o.layerDelay          || 0.02,
+            torusThickness:      o.torusThickness      || 0.2,
+            lineBrightness:      o.lineBrightness      || 2.5,
+            wobbleAmount:        o.wobbleAmount        || 0,
+            wobbleSpeed:         o.wobbleSpeed         || 1,
+            wobbleScale:         o.wobbleScale         || 2,
+            chromaticAberration: o.chromaticAberration || 0,
+            pulseIntensity:      o.pulseIntensity      || 0,
+            pulseSpeed:          o.pulseSpeed          || 1,
+            scanlineIntensity:   o.scanlineIntensity   || 0,
+            compositeSmoothness: o.compositeSmoothness || 0.1,
+            // Pre-resolved integer enum values
+            _shapeType:          SHAPE_MAP[o.shapeType]          || 0,
+            _orientType:         ORIENT_MAP[o.orientation]       || 0,
+            _bendAxis:           BEND_AXIS_MAP[o.bendAxis]       || 1,
+            _compositeMode:      COMPOSITE_MAP[o.compositeMode]  || 0,
+            _secondaryShapeType: SHAPE_MAP[o.secondaryShapeType] || 1,
+        };
+    });
+
     const scene = snapshot.scene;
-    const bg = hexToRgb(scene.bgColor);
     const iz = 1.0 / scene.zoom;
 
     let paused = false;
@@ -129,8 +262,6 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule) {
     function render(now) {
         if (paused) return;
 
-        gl.useProgram(program);
-        gl.clearColor(bg[0], bg[1], bg[2], 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         // Update Scene UBO
@@ -143,15 +274,15 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule) {
         sceneData[8] = bg[0];
         sceneData[9] = bg[1];
         sceneData[10] = bg[2];
-        
+
         if (sceneUbo) {
             gl.bindBuffer(gl.UNIFORM_BUFFER, sceneUbo);
             gl.bufferSubData(gl.UNIFORM_BUFFER, 0, sceneData);
         }
 
-        snapshot.objects.forEach(obj => {
-            if (!obj.visible) return;
+        gl.bindVertexArray(vao);
 
+        objects.forEach(obj => {
             // Fill Object UBO Data
             objectData[0] = obj.position.x;
             objectData[1] = obj.position.y;
@@ -161,84 +292,84 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule) {
             objectData[5] = obj.dimensions.y;
             objectData[6] = obj.dimensions.z;
 
-            objectData[8] = obj.rotation.x * DEG_TO_RAD;
-            objectData[9] = obj.rotation.y * DEG_TO_RAD;
-            objectData[10] = obj.rotation.z * DEG_TO_RAD;
+            // Pre-converted radians — no DEG_TO_RAD multiply per frame
+            objectData[8]  = obj._rotRad[0];
+            objectData[9]  = obj._rotRad[1];
+            objectData[10] = obj._rotRad[2];
 
-            const c1 = hexToRgb(obj.color1);
-            objectData[12] = c1[0];
-            objectData[13] = c1[1];
-            objectData[14] = c1[2];
+            // Pre-converted [r,g,b] arrays — no hexToRgb per frame
+            objectData[12] = obj.color1[0];
+            objectData[13] = obj.color1[1];
+            objectData[14] = obj.color1[2];
 
-            const c2 = hexToRgb(obj.color2);
-            objectData[16] = c2[0];
-            objectData[17] = c2[1];
-            objectData[18] = c2[2];
+            objectData[16] = obj.color2[0];
+            objectData[17] = obj.color2[1];
+            objectData[18] = obj.color2[2];
 
-            const rc = hexToRgb(obj.rimColor);
-            objectData[20] = rc[0];
-            objectData[21] = rc[1];
-            objectData[22] = rc[2];
+            objectData[20] = obj.rimColor[0];
+            objectData[21] = obj.rimColor[1];
+            objectData[22] = obj.rimColor[2];
 
-            objectData[24] = (obj.secondaryPosition || {x:0,y:0,z:0}).x;
-            objectData[25] = (obj.secondaryPosition || {x:0,y:0,z:0}).y;
-            objectData[26] = (obj.secondaryPosition || {x:0,y:0,z:0}).z;
+            objectData[24] = obj._spx;
+            objectData[25] = obj._spy;
+            objectData[26] = obj._spz;
 
-            objectData[28] = (obj.secondaryRotation || {x:0,y:0,z:0}).x * DEG_TO_RAD;
-            objectData[29] = (obj.secondaryRotation || {x:0,y:0,z:0}).y * DEG_TO_RAD;
-            objectData[30] = (obj.secondaryRotation || {x:0,y:0,z:0}).z * DEG_TO_RAD;
+            objectData[28] = obj._srx;
+            objectData[29] = obj._sry;
+            objectData[30] = obj._srz;
 
-            objectData[32] = (obj.secondaryDimensions || {x:1,y:1,z:1}).x;
-            objectData[33] = (obj.secondaryDimensions || {x:1,y:1,z:1}).y;
-            objectData[34] = (obj.secondaryDimensions || {x:1,y:1,z:1}).z;
+            objectData[32] = obj._sdx;
+            objectData[33] = obj._sdy;
+            objectData[34] = obj._sdz;
 
-            objectData[36] = obj.borderRadius || 0;
-            objectData[37] = obj.thickness || 0.05;
-            objectData[38] = obj.speed || 1;
-            objectData[39] = obj.longevity || 0.5;
+            objectData[36] = obj.borderRadius;
+            objectData[37] = obj.thickness;
+            objectData[38] = obj.speed;
+            objectData[39] = obj.longevity;
 
-            objectData[40] = obj.ease || 0.1;
-            objectData[41] = obj.numLines || 10;
+            objectData[40] = obj.ease;
+            objectData[41] = obj.numLines;
             objectData[42] = 0; // morphFactor
-            objectData[43] = obj.timeNoise || 0;
+            objectData[43] = obj.timeNoise;
 
-            objectData[44] = obj.svgExtrusionDepth || 0.5;
+            objectData[44] = obj.svgExtrusionDepth;
             objectData[45] = 32; // SDF_SPREAD
             objectData[46] = svgSdfResolution;
-            objectData[47] = obj.bendAmount || 0;
+            objectData[47] = obj.bendAmount;
 
-            objectData[48] = obj.bendAngle || 0;
-            objectData[49] = obj.bendOffset || 0;
-            objectData[50] = obj.bendLimit || 10;
-            objectData[51] = obj.rimIntensity || 0.4;
+            objectData[48] = obj.bendAngle;
+            objectData[49] = obj.bendOffset;
+            objectData[50] = obj.bendLimit;
+            objectData[51] = obj.rimIntensity;
 
-            objectData[52] = obj.rimPower || 3.0;
-            objectData[53] = obj.wireOpacity || 0.1;
-            objectData[54] = obj.wireIntensity || 0.1;
-            objectData[55] = obj.layerDelay || 0.02;
+            objectData[52] = obj.rimPower;
+            objectData[53] = obj.wireOpacity;
+            objectData[54] = obj.wireIntensity;
+            objectData[55] = obj.layerDelay;
 
-            objectData[56] = obj.torusThickness || 0.2;
-            objectData[57] = obj.lineBrightness || 2.5;
-            objectData[58] = obj.wobbleAmount || 0;
-            objectData[59] = obj.wobbleSpeed || 1;
+            objectData[56] = obj.torusThickness;
+            objectData[57] = obj.lineBrightness;
+            objectData[58] = obj.wobbleAmount;
+            objectData[59] = obj.wobbleSpeed;
 
-            objectData[60] = obj.wobbleScale || 2;
-            objectData[61] = obj.chromaticAberration || 0;
-            objectData[62] = obj.pulseIntensity || 0;
-            objectData[63] = obj.pulseSpeed || 1;
+            objectData[60] = obj.wobbleScale;
+            objectData[61] = obj.chromaticAberration;
+            objectData[62] = obj.pulseIntensity;
+            objectData[63] = obj.pulseSpeed;
 
-            objectData[64] = obj.scanlineIntensity || 0;
-            objectData[65] = obj.compositeSmoothness || 0.1;
+            objectData[64] = obj.scanlineIntensity;
+            objectData[65] = obj.compositeSmoothness;
 
-            objectDataInt[66] = SHAPE_MAP[obj.shapeType] || 0;
-            objectDataInt[67] = SHAPE_MAP[obj.shapeType] || 0; // shapeTypeNext
-            objectDataInt[68] = ORIENT_MAP[obj.orientation] || 0;
-            
+            // Pre-resolved integer enums
+            objectDataInt[66] = obj._shapeType;
+            objectDataInt[67] = obj._shapeType; // shapeTypeNext
+            objectDataInt[68] = obj._orientType;
+
             const needsSvg = obj.shapeType === 'SVG';
             objectDataInt[69] = (needsSvg && svgSdfReady && svgSdfTexture) ? 1 : 0;
-            objectDataInt[70] = BEND_AXIS_MAP[obj.bendAxis] || 1;
-            objectDataInt[71] = COMPOSITE_MAP[obj.compositeMode] || 0;
-            objectDataInt[72] = SHAPE_MAP[obj.secondaryShapeType] || 1;
+            objectDataInt[70] = obj._bendAxis;
+            objectDataInt[71] = obj._compositeMode;
+            objectDataInt[72] = obj._secondaryShapeType;
 
             if (objectUbo) {
                 gl.bindBuffer(gl.UNIFORM_BUFFER, objectUbo);
@@ -251,17 +382,24 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule) {
                 if (svgTexLoc) gl.uniform1i(svgTexLoc, 0);
             }
 
-
+            // Scissor test: skip pixels outside the object's screen-space bounding rect
+            const scissor = calculateScissorRect(scene, obj, gl.canvas.width, gl.canvas.height);
+            if (scissor && scissor.w > 0 && scissor.h > 0) {
+                gl.scissor(scissor.x, scissor.y, scissor.w, scissor.h);
+            } else {
+                gl.scissor(0, 0, gl.canvas.width, gl.canvas.height);
+            }
 
             gl.drawArrays(gl.TRIANGLES, 0, 6);
         });
 
+        gl.bindVertexArray(null);
         rafId = requestAnimationFrame(render);
     }
 
     function resize() {
         const rect = canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
+        const dpr = (window.devicePixelRatio || 1) * resolutionScale;
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
         gl.viewport(0, 0, canvas.width, canvas.height);
@@ -278,6 +416,7 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule) {
             cancelAnimationFrame(rafId);
             gl.deleteProgram(program);
             gl.deleteBuffer(quadBuffer);
+            gl.deleteVertexArray(vao);
             if (svgSdfTexture) gl.deleteTexture(svgSdfTexture);
         }
     };
