@@ -5,6 +5,7 @@ import { ObjectList } from './components/ObjectList'
 import { FPSCounter } from './components/FPSCounter'
 import { RendererView } from './components/RendererView'
 import { SvgUpload } from './components/SvgUpload'
+import { ExportPanel } from './components/ExportPanel'
 import { useAutoCycle } from './hooks/useAutoCycle'
 import { useSceneStore } from './store/sceneStore'
 
@@ -21,6 +22,7 @@ export default function App() {
             <SvgUpload />
             <DeviceBar />
             <ObjectList />
+            <ExportPanel />
         </div>
     )
 }
