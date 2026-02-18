@@ -49,26 +49,33 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule) {
         return null;
     }
 
-    // Cache uniform locations
-    const uniformNames = [
-        'u_time', 'u_resolution', 'u_camPos', 'u_position', 'u_boxSize', 'u_rot',
-        'u_borderRadius', 'u_borderThickness', 'u_speed', 'u_trailLength',
-        'u_ease', 'u_color1', 'u_color2', 'u_rimColor', 'u_numLines',
-        'u_shapeType', 'u_shapeTypeNext', 'u_morphFactor', 'u_orientation', 'u_bgColor', 'u_timeNoise',
-        'u_svgSdfTex', 'u_svgExtrusionDepth', 'u_hasSvgSdf',
-        'u_svgSpread', 'u_svgResolution', 'u_bendAmount', 'u_bendAngle', 'u_bendAxis',
-        'u_bendOffset', 'u_bendLimit', 'u_rimIntensity', 'u_wireOpacity',
-        'u_rimPower', 'u_layerDelay', 'u_wireIntensity', 'u_torusThickness', 'u_lineBrightness',
-        'u_wobbleAmount', 'u_wobbleSpeed', 'u_wobbleScale', 'u_chromaticAberration',
-        'u_pulseIntensity', 'u_pulseSpeed', 'u_scanlineIntensity',
-        'u_compositeMode', 'u_secondaryShapeType', 'u_secondaryPosition', 'u_secondaryRotation', 'u_secondaryDimensions', 'u_compositeSmoothness'
-    ];
+    // Setup UBOs
+    const sceneData = new Float32Array(12);
+    const objectData = new Float32Array(76);
+    const objectDataInt = new Int32Array(objectData.buffer);
 
-    const uniforms = {};
-    uniformNames.forEach(name => {
-        const loc = gl.getUniformLocation(program, name);
-        if (loc) uniforms[name] = loc;
-    });
+    let sceneUbo = null;
+    const sceneBlockIndex = gl.getUniformBlockIndex(program, 'SceneData');
+    if (sceneBlockIndex !== 0xFFFFFFFF) {
+        gl.uniformBlockBinding(program, sceneBlockIndex, 0);
+        sceneUbo = gl.createBuffer();
+        gl.bindBuffer(gl.UNIFORM_BUFFER, sceneUbo);
+        gl.bufferData(gl.UNIFORM_BUFFER, sceneData.byteLength, gl.DYNAMIC_DRAW);
+        gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, sceneUbo);
+    }
+
+    let objectUbo = null;
+    const objectBlockIndex = gl.getUniformBlockIndex(program, 'ObjectData');
+    if (objectBlockIndex !== 0xFFFFFFFF) {
+        gl.uniformBlockBinding(program, objectBlockIndex, 1);
+        objectUbo = gl.createBuffer();
+        gl.bindBuffer(gl.UNIFORM_BUFFER, objectUbo);
+        gl.bufferData(gl.UNIFORM_BUFFER, objectData.byteLength, gl.DYNAMIC_DRAW);
+        gl.bindBufferBase(gl.UNIFORM_BUFFER, 1, objectUbo);
+    }
+
+    // Cache sampler location
+    const svgTexLoc = gl.getUniformLocation(program, 'u_svgSdfTex');
 
     // Fullscreen quad
     const quadBuffer = gl.createBuffer();
@@ -126,84 +133,125 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule) {
         gl.clearColor(bg[0], bg[1], bg[2], 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        gl.uniform2f(uniforms['u_resolution'], gl.canvas.width, gl.canvas.height);
-        gl.uniform1f(uniforms['u_time'], now * 0.001);
-        gl.uniform3f(uniforms['u_camPos'], scene.camera.x * iz, scene.camera.y * iz, scene.camera.z * iz);
-        gl.uniform3f(uniforms['u_bgColor'], bg[0], bg[1], bg[2]);
+        // Update Scene UBO
+        sceneData[0] = gl.canvas.width;
+        sceneData[1] = gl.canvas.height;
+        sceneData[2] = now * 0.001;
+        sceneData[4] = scene.camera.x * iz;
+        sceneData[5] = scene.camera.y * iz;
+        sceneData[6] = scene.camera.z * iz;
+        sceneData[8] = bg[0];
+        sceneData[9] = bg[1];
+        sceneData[10] = bg[2];
+        
+        if (sceneUbo) {
+            gl.bindBuffer(gl.UNIFORM_BUFFER, sceneUbo);
+            gl.bufferSubData(gl.UNIFORM_BUFFER, 0, sceneData);
+        }
 
         snapshot.objects.forEach(obj => {
             if (!obj.visible) return;
 
-            gl.uniform3f(uniforms['u_position'], obj.position.x, obj.position.y, obj.position.z);
-            gl.uniform3f(uniforms['u_boxSize'], obj.dimensions.x, obj.dimensions.y, obj.dimensions.z);
-            gl.uniform3f(uniforms['u_rot'],
-                obj.rotation.x * DEG_TO_RAD,
-                obj.rotation.y * DEG_TO_RAD,
-                obj.rotation.z * DEG_TO_RAD
-            );
+            // Fill Object UBO Data
+            objectData[0] = obj.position.x;
+            objectData[1] = obj.position.y;
+            objectData[2] = obj.position.z;
 
-            gl.uniform1f(uniforms['u_borderRadius'], obj.borderRadius);
-            gl.uniform1f(uniforms['u_borderThickness'], obj.thickness);
-            gl.uniform1f(uniforms['u_speed'], obj.speed);
-            gl.uniform1f(uniforms['u_trailLength'], obj.longevity);
-            gl.uniform1f(uniforms['u_ease'], obj.ease);
-            gl.uniform1f(uniforms['u_numLines'], obj.numLines);
-            gl.uniform1f(uniforms['u_timeNoise'], obj.timeNoise);
-            gl.uniform1f(uniforms['u_bendAmount'], obj.bendAmount);
-            gl.uniform1f(uniforms['u_bendAngle'], obj.bendAngle);
-            gl.uniform1f(uniforms['u_bendOffset'], obj.bendOffset);
-            gl.uniform1f(uniforms['u_bendLimit'], obj.bendLimit);
-            gl.uniform1i(uniforms['u_bendAxis'], BEND_AXIS_MAP[obj.bendAxis] || 1);
-            gl.uniform1f(uniforms['u_rimIntensity'], obj.rimIntensity || 0.4);
-            gl.uniform1f(uniforms['u_wireOpacity'], obj.wireOpacity || 0.1);
-            gl.uniform1f(uniforms['u_rimPower'], obj.rimPower || 3.0);
-            gl.uniform1f(uniforms['u_layerDelay'], obj.layerDelay || 0.02);
-            gl.uniform1f(uniforms['u_wireIntensity'], obj.wireIntensity || 0.1);
-            gl.uniform1f(uniforms['u_torusThickness'], obj.torusThickness || 0.2);
-            gl.uniform1f(uniforms['u_lineBrightness'], obj.lineBrightness || 2.5);
-            gl.uniform1f(uniforms['u_wobbleAmount'], obj.wobbleAmount || 0);
-            gl.uniform1f(uniforms['u_wobbleSpeed'], obj.wobbleSpeed || 1);
-            gl.uniform1f(uniforms['u_wobbleScale'], obj.wobbleScale || 2);
-            gl.uniform1f(uniforms['u_chromaticAberration'], obj.chromaticAberration || 0);
-            gl.uniform1f(uniforms['u_pulseIntensity'], obj.pulseIntensity || 0);
-            gl.uniform1f(uniforms['u_pulseSpeed'], obj.pulseSpeed || 1);
-            gl.uniform1f(uniforms['u_scanlineIntensity'], obj.scanlineIntensity || 0);
+            objectData[4] = obj.dimensions.x;
+            objectData[5] = obj.dimensions.y;
+            objectData[6] = obj.dimensions.z;
 
-            gl.uniform1i(uniforms['u_shapeType'], SHAPE_MAP[obj.shapeType] || 0);
-            gl.uniform1i(uniforms['u_shapeTypeNext'], SHAPE_MAP[obj.shapeType] || 0);
-            gl.uniform1f(uniforms['u_morphFactor'], 0.0);
-            gl.uniform1i(uniforms['u_orientation'], ORIENT_MAP[obj.orientation] || 0);
-            gl.uniform1i(uniforms['u_compositeMode'], COMPOSITE_MAP[obj.compositeMode] || 0);
-            gl.uniform1i(uniforms['u_secondaryShapeType'], SHAPE_MAP[obj.secondaryShapeType] || 1);
-            gl.uniform3f(uniforms['u_secondaryPosition'], obj.secondaryPosition.x, obj.secondaryPosition.y, obj.secondaryPosition.z);
-            gl.uniform3f(uniforms['u_secondaryRotation'],
-                obj.secondaryRotation.x * DEG_TO_RAD,
-                obj.secondaryRotation.y * DEG_TO_RAD,
-                obj.secondaryRotation.z * DEG_TO_RAD
-            );
-            gl.uniform3f(uniforms['u_secondaryDimensions'], obj.secondaryDimensions.x, obj.secondaryDimensions.y, obj.secondaryDimensions.z);
-            gl.uniform1f(uniforms['u_compositeSmoothness'], obj.compositeSmoothness || 0.1);
+            objectData[8] = obj.rotation.x * DEG_TO_RAD;
+            objectData[9] = obj.rotation.y * DEG_TO_RAD;
+            objectData[10] = obj.rotation.z * DEG_TO_RAD;
 
-            // SVG SDF
+            const c1 = hexToRgb(obj.color1);
+            objectData[12] = c1[0];
+            objectData[13] = c1[1];
+            objectData[14] = c1[2];
+
+            const c2 = hexToRgb(obj.color2);
+            objectData[16] = c2[0];
+            objectData[17] = c2[1];
+            objectData[18] = c2[2];
+
+            const rc = hexToRgb(obj.rimColor);
+            objectData[20] = rc[0];
+            objectData[21] = rc[1];
+            objectData[22] = rc[2];
+
+            objectData[24] = (obj.secondaryPosition || {x:0,y:0,z:0}).x;
+            objectData[25] = (obj.secondaryPosition || {x:0,y:0,z:0}).y;
+            objectData[26] = (obj.secondaryPosition || {x:0,y:0,z:0}).z;
+
+            objectData[28] = (obj.secondaryRotation || {x:0,y:0,z:0}).x * DEG_TO_RAD;
+            objectData[29] = (obj.secondaryRotation || {x:0,y:0,z:0}).y * DEG_TO_RAD;
+            objectData[30] = (obj.secondaryRotation || {x:0,y:0,z:0}).z * DEG_TO_RAD;
+
+            objectData[32] = (obj.secondaryDimensions || {x:1,y:1,z:1}).x;
+            objectData[33] = (obj.secondaryDimensions || {x:1,y:1,z:1}).y;
+            objectData[34] = (obj.secondaryDimensions || {x:1,y:1,z:1}).z;
+
+            objectData[36] = obj.borderRadius || 0;
+            objectData[37] = obj.thickness || 0.05;
+            objectData[38] = obj.speed || 1;
+            objectData[39] = obj.longevity || 0.5;
+
+            objectData[40] = obj.ease || 0.1;
+            objectData[41] = obj.numLines || 10;
+            objectData[42] = 0; // morphFactor
+            objectData[43] = obj.timeNoise || 0;
+
+            objectData[44] = obj.svgExtrusionDepth || 0.5;
+            objectData[45] = 32; // SDF_SPREAD
+            objectData[46] = svgSdfResolution;
+            objectData[47] = obj.bendAmount || 0;
+
+            objectData[48] = obj.bendAngle || 0;
+            objectData[49] = obj.bendOffset || 0;
+            objectData[50] = obj.bendLimit || 10;
+            objectData[51] = obj.rimIntensity || 0.4;
+
+            objectData[52] = obj.rimPower || 3.0;
+            objectData[53] = obj.wireOpacity || 0.1;
+            objectData[54] = obj.wireIntensity || 0.1;
+            objectData[55] = obj.layerDelay || 0.02;
+
+            objectData[56] = obj.torusThickness || 0.2;
+            objectData[57] = obj.lineBrightness || 2.5;
+            objectData[58] = obj.wobbleAmount || 0;
+            objectData[59] = obj.wobbleSpeed || 1;
+
+            objectData[60] = obj.wobbleScale || 2;
+            objectData[61] = obj.chromaticAberration || 0;
+            objectData[62] = obj.pulseIntensity || 0;
+            objectData[63] = obj.pulseSpeed || 1;
+
+            objectData[64] = obj.scanlineIntensity || 0;
+            objectData[65] = obj.compositeSmoothness || 0.1;
+
+            objectDataInt[66] = SHAPE_MAP[obj.shapeType] || 0;
+            objectDataInt[67] = SHAPE_MAP[obj.shapeType] || 0; // shapeTypeNext
+            objectDataInt[68] = ORIENT_MAP[obj.orientation] || 0;
+            
             const needsSvg = obj.shapeType === 'SVG';
+            objectDataInt[69] = (needsSvg && svgSdfReady && svgSdfTexture) ? 1 : 0;
+            objectDataInt[70] = BEND_AXIS_MAP[obj.bendAxis] || 1;
+            objectDataInt[71] = COMPOSITE_MAP[obj.compositeMode] || 0;
+            objectDataInt[72] = SHAPE_MAP[obj.secondaryShapeType] || 1;
+
+            if (objectUbo) {
+                gl.bindBuffer(gl.UNIFORM_BUFFER, objectUbo);
+                gl.bufferSubData(gl.UNIFORM_BUFFER, 0, objectData);
+            }
+
             if (needsSvg && svgSdfReady && svgSdfTexture) {
                 gl.activeTexture(gl.TEXTURE0);
                 gl.bindTexture(gl.TEXTURE_2D, svgSdfTexture);
-                gl.uniform1i(uniforms['u_svgSdfTex'], 0);
-                gl.uniform1i(uniforms['u_hasSvgSdf'], 1);
-                gl.uniform1f(uniforms['u_svgExtrusionDepth'], obj.svgExtrusionDepth || 0.5);
-                gl.uniform1f(uniforms['u_svgSpread'], svgSdfModule ? svgSdfModule.SDF_SPREAD : 32);
-                gl.uniform1f(uniforms['u_svgResolution'], svgSdfResolution);
-            } else {
-                gl.uniform1i(uniforms['u_hasSvgSdf'], 0);
+                if (svgTexLoc) gl.uniform1i(svgTexLoc, 0);
             }
 
-            const c1 = hexToRgb(obj.color1);
-            const c2 = hexToRgb(obj.color2);
-            const rc = hexToRgb(obj.rimColor);
-            gl.uniform3f(uniforms['u_color1'], c1[0], c1[1], c1[2]);
-            gl.uniform3f(uniforms['u_color2'], c2[0], c2[1], c2[2]);
-            gl.uniform3f(uniforms['u_rimColor'], rc[0], rc[1], rc[2]);
+
 
             gl.drawArrays(gl.TRIANGLES, 0, 6);
         });
