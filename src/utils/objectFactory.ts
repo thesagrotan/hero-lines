@@ -29,6 +29,14 @@ export function createDefaultObject(id: string, name: string): SceneObject {
         bendAxis: 'Y',
         bendOffset: 0,
         bendLimit: 1.0,
+        svgExtrusionDepth: 0.5,
+        rimIntensity: 0.4,
+        rimPower: 3.0,
+        wireOpacity: 0.1,
+        wireIntensity: 0.1,
+        layerDelay: 0.02,
+        torusThickness: 0.2,
+        lineBrightness: 2.5,
     };
 }
 

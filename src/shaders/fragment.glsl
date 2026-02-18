@@ -32,9 +32,34 @@ uniform float u_bendAngle;
 uniform float u_bendOffset;
 uniform float u_bendLimit;
 uniform int u_bendAxis;
+uniform float u_rimIntensity;
+uniform float u_rimPower;
+uniform float u_wireOpacity;
+uniform float u_wireIntensity;
+uniform float u_layerDelay;
+uniform float u_torusThickness;
+uniform float u_lineBrightness;
+uniform float u_wobbleAmount;
+uniform float u_wobbleSpeed;
+uniform float u_wobbleScale;
+uniform float u_chromaticAberration;
+uniform float u_pulseIntensity;
+uniform float u_pulseSpeed;
+uniform float u_scanlineIntensity;
 
 float hash(float n) {
     return fract(sin(n) * 43758.5453123);
+}
+
+float noise(vec3 x) {
+    vec3 p = floor(x);
+    vec3 f = fract(x);
+    f = f*f*(3.0-2.0*f);
+    float n = p.x + p.y*57.0 + 113.0*p.z;
+    return mix(mix(mix(hash(n+0.0), hash(n+1.0),f.x),
+                   mix(hash(n+57.0), hash(n+58.0),f.x),f.y),
+               mix(mix(hash(n+113.0), hash(n+114.0),f.x),
+                   mix(hash(n+170.0), hash(n+171.0),f.x),f.y),f.z);
 }
 
 float sdSphere(vec3 p, float r) {
@@ -59,7 +84,7 @@ float sdTorus(vec3 p, vec3 h, int orient) {
     vec3 p_o = (orient == 1) ? p.yxz : (orient == 2) ? p.zyx : p.xyz;
     vec3 h_o = (orient == 1) ? h.yxz : (orient == 2) ? h.zyx : h.xyz;
     vec2 q = vec2(length(p_o.yz / h_o.yz) - 1.0, p_o.x / h_o.x);
-    return (length(q) - 0.2) * min(h_o.x, min(h_o.y, h_o.z));
+    return (length(q) - u_torusThickness) * min(h_o.x, min(h_o.y, h_o.z));
 }
 
 float sdCapsule(vec3 p, vec3 h, int orient) {
@@ -187,10 +212,30 @@ float getShapeDist(vec3 p, vec3 boxSize, float radius, int shapeType) {
 
 float map(vec3 p, vec3 boxSize, float radius) {
     vec3 pBent = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
-    float d1 = getShapeDist(pBent, boxSize, radius, u_shapeType);
-    if (u_morphFactor <= 0.0) return d1;
-    float d2 = getShapeDist(pBent, boxSize, radius, u_shapeTypeNext);
-    return mix(d1, d2, u_morphFactor);
+    
+    // Apply Pulse
+    float pulse = 1.0 + sin(u_time * u_pulseSpeed) * u_pulseIntensity;
+    vec3 pScaled = pBent / pulse;
+    
+    float d1 = getShapeDist(pScaled, boxSize, radius, u_shapeType);
+    float d;
+    if (u_morphFactor <= 0.0) {
+        d = d1;
+    } else {
+        float d2 = getShapeDist(pScaled, boxSize, radius, u_shapeTypeNext);
+        d = mix(d1, d2, u_morphFactor);
+    }
+    
+    // Apply scale compensation for distance field
+    d *= pulse;
+    
+    // Apply Wobble
+    if (u_wobbleAmount > 0.0) {
+        float w = noise(pBent * u_wobbleScale + u_time * u_wobbleSpeed) * u_wobbleAmount;
+        d += w;
+    }
+    
+    return d;
 }
 
 vec3 calcNormal(vec3 p, vec3 boxSize, float radius) {
@@ -204,7 +249,7 @@ mat3 rotY(float a) { float s=sin(a), c=cos(a); return mat3(c,0,s, 0,1,0, -s,0,c)
 mat3 rotZ(float a) { float s=sin(a), c=cos(a); return mat3(c,-s,0, s,c,0, 0,0,1); }
 
 vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
-    vec3 m = 1.0 / rd, n = m * ro, k = abs(m) * boxSize;
+    vec3 m = 1.0 / rd, n = m * ro, k = abs(m) * (boxSize * 1.5); // Wider box to account for effects
     vec3 t1 = -n - k, t2 = -n + k;
     float tN = max(max(t1.x, t1.y), t1.z), tF = min(min(t2.x, t2.y), t2.z);
     return (tN > tF || tF < 0.0) ? vec2(-1.0) : vec2(tN, tF);
@@ -224,46 +269,44 @@ vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
     else if (u_orientation == 2) { p1 = pUse.x; p2 = pUse.y; b1 = boxSize.x; b2 = boxSize.y; }
     float perimeter = (abs(p2 * b1) > abs(p1 * b2)) ? ((p2 > 0.0) ? (b1 + p1) : (3.0 * b1 + 2.0 * b2 - p1)) : ((p1 > 0.0) ? (2.0 * b1 + b2 - p2) : (4.0 * b1 + 3.0 * b2 + p2));
     
-    float noise = hash(layerIdx) * u_timeNoise;
-    float progress = mod(time * u_speed - layerIdx * 0.02 + noise, 3.0);
+    float noiseVal = hash(layerIdx) * u_timeNoise;
+    float progress = mod(time * u_speed - layerIdx * u_layerDelay + noiseVal, 3.0);
     float dist = fract(progress - (perimeter / (4.0 * (b1 + b2) + 0.001)));
     float isActive = (dist < u_trailLength) ? pow(smoothstep(0.0, max(0.01, u_ease), 1.0 - abs(1.0 - (dist / u_trailLength) * 2.0)), 1.5) : 0.0;
     vec3 n = calcNormal(p, boxSize, u_borderRadius);
     float dotV = (u_orientation == 1) ? abs(n.y) : (u_orientation == 2) ? abs(n.z) : (u_orientation == 3) ? abs(dot(n, vec3(0.577))) : abs(n.x);
     float lineAlpha = lineMask * isActive * smoothstep(0.1, 0.4, 1.0 - dotV);
     
-    vec3 wireColor = (u_shapeType == 0) ? u_color1 * 0.1 * max(max((1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.y) - boxSize.y))), (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.y) - boxSize.y))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.z) - boxSize.z)))), (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.z) - boxSize.z)))) : vec3(0);
-    float wireAlpha = (length(wireColor) > 0.001) ? 0.1 : 0.0;
+    vec3 wireColor = (u_shapeType == 0) ? u_color1 * u_wireIntensity * max(max((1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.y) - boxSize.y))), (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.y) - boxSize.y))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.z) - boxSize.z)))), (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.z) - boxSize.z)))) : vec3(0);
+    float wireAlpha = (length(wireColor) > 0.001) ? u_wireOpacity : 0.0;
 
     vec3 baseColor = mix(u_color1, u_color2, isActive);
     float totalAlpha = clamp(lineAlpha + wireAlpha, 0.0, 1.0);
     vec3 finalRGB = baseColor * lineAlpha + wireColor;
     
-    float boost = isBack ? 1.0 : 2.5;
+    float boost = isBack ? 1.0 : u_lineBrightness;
     return vec4(finalRGB * boost, totalAlpha * (isBack ? 0.5 : 1.0));
 }
 
-void main() {
-    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / u_resolution.y;
-    mat3 mI = transpose(rotZ(u_rot.z) * rotY(u_rot.y) * rotX(u_rot.x));
-    
-    // Relative camera position in object's local space
-    vec3 ro_l = mI * (u_camPos - u_position);
-    vec3 fwd = normalize(mI * -u_camPos); 
-    vec3 right = normalize(cross(vec3(0, 1, 0), fwd)), up = cross(fwd, right), rd = normalize(fwd + uv.x * right + uv.y * up);
-    
+vec3 render(vec3 ro, vec3 rd, vec3 ro_l, float tFar) {
     vec2 tBox = intersectBox(ro_l, rd, u_boxSize);
     vec3 col = vec3(0.0);
     float alpha = 0.0;
     
     if (tBox.x > 0.0) {
         float t = tBox.x; bool hit = false; vec3 p;
-        for(int i=0; i<64; i++) { p = ro_l + rd * t; float d = map(p, u_boxSize, u_borderRadius); if(d < 0.001) { hit = true; break; } t += d; if(t > tBox.y) break; }
+        for(int i=0; i<64; i++) { 
+            p = ro_l + rd * t; 
+            float d = map(p, u_boxSize, u_borderRadius); 
+            if(d < 0.001) { hit = true; break; } 
+            t += d; 
+            if(t > tBox.y) break; 
+        }
         if(hit) { 
             vec3 pBent = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
             vec4 surface = getSurfaceColor(pBent, u_boxSize, u_time, u_borderThickness, false);
             vec3 n = calcNormal(pBent, u_boxSize, u_borderRadius);
-            float rim = pow(1.0 - max(dot(-rd, n), 0.0), 3.0) * 0.4;
+            float rim = pow(1.0 - max(dot(-rd, n), 0.0), u_rimPower) * u_rimIntensity;
             vec3 rimRGB = u_rimColor * rim;
             
             col += surface.rgb + rimRGB;
@@ -271,13 +314,50 @@ void main() {
         }
         
         vec3 ro_b = ro_l + rd * tBox.y, rd_b = -rd; float tb = 0.0; hit = false;
-        for(int i=0; i<64; i++) { p = ro_b + rd_b * tb; float d = map(p, u_boxSize, u_borderRadius); if(d < 0.001) { hit = true; break; } tb += d; if(tb > (tBox.y - tBox.x)) break; }
+        for(int i=0; i<64; i++) { 
+            p = ro_b + rd_b * tb; 
+            float d = map(p, u_boxSize, u_borderRadius); 
+            if(d < 0.001) { hit = true; break; } 
+            tb += d; 
+            if(tb > (tBox.y - tBox.x)) break; 
+        }
         if(hit) {
-            vec4 surfaceBack = getSurfaceColor(p, u_boxSize, u_time, u_borderThickness, true);
-            col += surfaceBack.rgb * (1.0 - alpha); // Very basic occlusion
+            vec3 pBentB = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+            vec4 surfaceBack = getSurfaceColor(pBentB, u_boxSize, u_time, u_borderThickness, true);
+            col += surfaceBack.rgb * (1.0 - alpha); 
             alpha += surfaceBack.a * (1.0 - alpha);
         }
     }
+    return col;
+}
+
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / u_resolution.y;
+    mat3 mI = transpose(rotZ(u_rot.z) * rotY(u_rot.y) * rotX(u_rot.x));
     
-    fragColor = vec4(col, clamp(alpha, 0.0, 1.0));
+    vec3 ro_l = mI * (u_camPos - u_position);
+    vec3 fwd = normalize(mI * -u_camPos); 
+    vec3 right = normalize(cross(vec3(0, 1, 0), fwd)), up = cross(fwd, right);
+    
+    vec3 finalCol;
+    if (u_chromaticAberration > 0.0) {
+        vec3 rdR = normalize(fwd + (uv.x + u_chromaticAberration) * right + uv.y * up);
+        vec3 rdG = normalize(fwd + uv.x * right + uv.y * up);
+        vec3 rdB = normalize(fwd + (uv.x - u_chromaticAberration) * right + uv.y * up);
+        
+        finalCol.r = render(vec3(0), rdR, ro_l, 20.0).r;
+        finalCol.g = render(vec3(0), rdG, ro_l, 20.0).g;
+        finalCol.b = render(vec3(0), rdB, ro_l, 20.0).b;
+    } else {
+        vec3 rd = normalize(fwd + uv.x * right + uv.y * up);
+        finalCol = render(vec3(0), rd, ro_l, 20.0);
+    }
+    
+    // Apply Scanlines
+    if (u_scanlineIntensity > 0.0) {
+        float s = sin(gl_FragCoord.y * 1.5) * 0.5 + 0.5;
+        finalCol *= mix(1.0, s, u_scanlineIntensity * 0.5);
+    }
+    
+    fragColor = vec4(finalCol, 1.0);
 }

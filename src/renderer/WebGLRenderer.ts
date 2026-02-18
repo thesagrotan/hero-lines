@@ -48,7 +48,10 @@ export class WebGLRenderer {
             'u_shapeType', 'u_shapeTypeNext', 'u_morphFactor', 'u_orientation', 'u_bgColor', 'u_timeNoise',
             'u_svgSdfTex', 'u_svgExtrusionDepth', 'u_hasSvgSdf',
             'u_svgSpread', 'u_svgResolution', 'u_bendAmount', 'u_bendAngle', 'u_bendAxis',
-            'u_bendOffset', 'u_bendLimit'
+            'u_bendOffset', 'u_bendLimit', 'u_rimIntensity', 'u_wireOpacity',
+            'u_rimPower', 'u_layerDelay', 'u_wireIntensity', 'u_torusThickness', 'u_lineBrightness',
+            'u_wobbleAmount', 'u_wobbleSpeed', 'u_wobbleScale', 'u_chromaticAberration',
+            'u_pulseIntensity', 'u_pulseSpeed', 'u_scanlineIntensity'
         ];
 
         uniformNames.forEach(name => {
@@ -158,6 +161,20 @@ export class WebGLRenderer {
             gl.uniform1f(this.uniforms['u_bendOffset'], obj.bendOffset);
             gl.uniform1f(this.uniforms['u_bendLimit'], obj.bendLimit);
             gl.uniform1i(this.uniforms['u_bendAxis'], WebGLRenderer.BEND_AXIS_MAP[obj.bendAxis] ?? 1);
+            gl.uniform1f(this.uniforms['u_rimIntensity'], obj.rimIntensity ?? 0.4);
+            gl.uniform1f(this.uniforms['u_wireOpacity'], obj.wireOpacity ?? 0.1);
+            gl.uniform1f(this.uniforms['u_rimPower'], obj.rimPower ?? 3.0);
+            gl.uniform1f(this.uniforms['u_layerDelay'], obj.layerDelay ?? 0.02);
+            gl.uniform1f(this.uniforms['u_wireIntensity'], obj.wireIntensity ?? 0.1);
+            gl.uniform1f(this.uniforms['u_torusThickness'], obj.torusThickness ?? 0.2);
+            gl.uniform1f(this.uniforms['u_lineBrightness'], obj.lineBrightness ?? 2.5);
+            gl.uniform1f(this.uniforms['u_wobbleAmount'], obj.wobbleAmount ?? 0);
+            gl.uniform1f(this.uniforms['u_wobbleSpeed'], obj.wobbleSpeed ?? 1);
+            gl.uniform1f(this.uniforms['u_wobbleScale'], obj.wobbleScale ?? 2);
+            gl.uniform1f(this.uniforms['u_chromaticAberration'], obj.chromaticAberration ?? 0);
+            gl.uniform1f(this.uniforms['u_pulseIntensity'], obj.pulseIntensity ?? 0);
+            gl.uniform1f(this.uniforms['u_pulseSpeed'], obj.pulseSpeed ?? 1);
+            gl.uniform1f(this.uniforms['u_scanlineIntensity'], obj.scanlineIntensity ?? 0);
 
             gl.uniform1i(this.uniforms['u_shapeType'], WebGLRenderer.SHAPE_MAP[obj.shapeType] ?? 0);
             gl.uniform1i(this.uniforms['u_shapeTypeNext'], WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0);
@@ -171,7 +188,7 @@ export class WebGLRenderer {
                 gl.bindTexture(gl.TEXTURE_2D, this.svgSdfTexture);
                 gl.uniform1i(this.uniforms['u_svgSdfTex'], 0);
                 gl.uniform1i(this.uniforms['u_hasSvgSdf'], 1);
-                gl.uniform1f(this.uniforms['u_svgExtrusionDepth'], obj.svgData?.extrusionDepth ?? 0.5);
+                gl.uniform1f(this.uniforms['u_svgExtrusionDepth'], obj.svgExtrusionDepth ?? 0.5);
                 gl.uniform1f(this.uniforms['u_svgSpread'], SDF_SPREAD);
                 gl.uniform1f(this.uniforms['u_svgResolution'], this.svgSdfResolution);
             } else {

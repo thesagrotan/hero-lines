@@ -1,4 +1,4 @@
-import { useControls } from 'leva';
+import { useControls, folder } from 'leva';
 import { useSceneStore } from '../store/sceneStore';
 import { useEffect } from 'react';
 import { objectOnChange, objectOnChangeVec3 } from '../utils/levaHelpers';
@@ -12,98 +12,192 @@ export const ObjectControls = () => {
 
     const [, set] = useControls(
         () => ({
-            position: {
-                value: { x: 0, y: 0, z: 0 },
-                step: 0.1,
-                onChange: objectOnChangeVec3('position', updateObject),
-            },
-            dimensions: {
-                value: { x: 1, y: 1, z: 1 },
-                step: 0.05,
-                onChange: objectOnChangeVec3('dimensions', updateObject),
-            },
-            rotation: {
-                value: { x: 0, y: 0, z: 0 },
-                step: 1,
-                onChange: objectOnChangeVec3('rotation', updateObject),
-            },
-            shapeType: {
-                value: 'Box',
-                options: ['Box', 'Sphere', 'Cone', 'Torus', 'Capsule', 'Cylinder', 'SVG'],
-                onChange: objectOnChange('shapeType', updateObject),
-            },
-            borderRadius: {
-                value: 0.1, min: 0, max: 1, step: 0.01,
-                onChange: objectOnChange('borderRadius', updateObject),
-            },
-            bendAmount: {
-                value: 0, min: -2, max: 2, step: 0.01,
-                label: 'Bend Amount',
-                onChange: objectOnChange('bendAmount', updateObject),
-            },
-            bendAngle: {
-                value: 0, min: 0, max: 360, step: 1,
-                label: 'Bend Angle',
-                onChange: objectOnChange('bendAngle', updateObject),
-            },
-            bendAxis: {
-                value: 'Y',
-                options: ['X', 'Y', 'Z'],
-                label: 'Bend Axis',
-                onChange: objectOnChange('bendAxis', updateObject),
-            },
-            bendOffset: {
-                value: 0, min: -2, max: 2, step: 0.01,
-                label: 'Bend Offset',
-                onChange: objectOnChange('bendOffset', updateObject),
-            },
-            bendLimit: {
-                value: 1, min: 0.1, max: 5, step: 0.01,
-                label: 'Bend Limit',
-                onChange: objectOnChange('bendLimit', updateObject),
-            },
-            numLines: {
-                value: 30, min: 1, max: 100, step: 1,
-                onChange: objectOnChange('numLines', updateObject),
-            },
-            thickness: {
-                value: 0.01, min: 0.001, max: 0.1, step: 0.001,
-                onChange: objectOnChange('thickness', updateObject),
-            },
-            orientation: {
-                value: 'Horizontal',
-                options: ['Horizontal', 'Vertical', 'Depth', 'Diagonal'],
-                onChange: objectOnChange('orientation', updateObject),
-            },
-            speed: {
-                value: 0.8, min: 0, max: 5, step: 0.1,
-                onChange: objectOnChange('speed', updateObject),
-            },
-            longevity: {
-                value: 0.4, min: 0.05, max: 2, step: 0.05,
-                onChange: objectOnChange('longevity', updateObject),
-            },
-            ease: {
-                value: 0.5, min: 0, max: 1, step: 0.1,
-                onChange: objectOnChange('ease', updateObject),
-            },
-            timeNoise: {
-                value: 0.5, min: 0, max: 2, step: 0.05,
-                label: 'Timing Noise',
-                onChange: objectOnChange('timeNoise', updateObject),
-            },
-            color1: {
-                value: '#db5a00',
-                onChange: objectOnChange('color1', updateObject),
-            },
-            color2: {
-                value: '#101010',
-                onChange: objectOnChange('color2', updateObject),
-            },
-            rimColor: {
-                value: '#1a66cc',
-                onChange: objectOnChange('rimColor', updateObject),
-            },
+            'Shape': folder({
+                shapeType: {
+                    value: 'Box',
+                    options: ['Box', 'Sphere', 'Cone', 'Torus', 'Capsule', 'Cylinder', 'SVG'],
+                    onChange: objectOnChange('shapeType', updateObject),
+                },
+                borderRadius: {
+                    value: 0.1, min: 0, max: 1, step: 0.01,
+                    label: 'Border Radius',
+                    onChange: objectOnChange('borderRadius', updateObject),
+                },
+                orientation: {
+                    value: 'Horizontal',
+                    options: ['Horizontal', 'Vertical', 'Depth', 'Diagonal'],
+                    onChange: objectOnChange('orientation', updateObject),
+                },
+                position: {
+                    value: { x: 0, y: 0, z: 0 },
+                    step: 0.1,
+                    onChange: objectOnChangeVec3('position', updateObject),
+                },
+                dimensions: {
+                    value: { x: 1, y: 1, z: 1 },
+                    step: 0.05,
+                    onChange: objectOnChangeVec3('dimensions', updateObject),
+                },
+                rotation: {
+                    value: { x: 0, y: 0, z: 0 },
+                    step: 1,
+                    onChange: objectOnChangeVec3('rotation', updateObject),
+                },
+                svgExtrusionDepth: {
+                    value: 0.5, min: 0.01, max: 2, step: 0.01,
+                    label: 'SVG Extrusion',
+                    onChange: objectOnChange('svgExtrusionDepth', updateObject),
+                },
+                wireOpacity: {
+                    value: 0.1, min: 0, max: 1, step: 0.01,
+                    label: 'Wire Opacity',
+                    onChange: objectOnChange('wireOpacity', updateObject),
+                },
+                wireIntensity: {
+                    value: 0.1, min: 0, max: 1, step: 0.01,
+                    label: 'Wire Intensity',
+                    onChange: objectOnChange('wireIntensity', updateObject),
+                },
+                torusThickness: {
+                    value: 0.2, min: 0.05, max: 0.5, step: 0.01,
+                    label: 'Torus Thickness',
+                    onChange: objectOnChange('torusThickness', updateObject),
+                },
+            }, { collapsed: false }),
+
+            'Lines': folder({
+                numLines: {
+                    value: 30, min: 1, max: 100, step: 1,
+                    label: 'Num Lines',
+                    onChange: objectOnChange('numLines', updateObject),
+                },
+                thickness: {
+                    value: 0.01, min: 0.001, max: 0.1, step: 0.001,
+                    onChange: objectOnChange('thickness', updateObject),
+                },
+                speed: {
+                    value: 0.8, min: 0, max: 5, step: 0.1,
+                    onChange: objectOnChange('speed', updateObject),
+                },
+                longevity: {
+                    value: 0.4, min: 0.05, max: 2, step: 0.05,
+                    onChange: objectOnChange('longevity', updateObject),
+                },
+                ease: {
+                    value: 0.5, min: 0, max: 1, step: 0.1,
+                    onChange: objectOnChange('ease', updateObject),
+                },
+                timeNoise: {
+                    value: 0.5, min: 0, max: 2, step: 0.05,
+                    label: 'Timing Noise',
+                    onChange: objectOnChange('timeNoise', updateObject),
+                },
+                layerDelay: {
+                    value: 0.02, min: 0.001, max: 0.1, step: 0.001,
+                    label: 'Layer Delay',
+                    onChange: objectOnChange('layerDelay', updateObject),
+                },
+                lineBrightness: {
+                    value: 2.5, min: 0.5, max: 5, step: 0.1,
+                    label: 'Brightness',
+                    onChange: objectOnChange('lineBrightness', updateObject),
+                },
+            }, { collapsed: true }),
+
+            'Colors': folder({
+                color1: {
+                    value: '#db5a00',
+                    label: 'Line Color',
+                    onChange: objectOnChange('color1', updateObject),
+                },
+                color2: {
+                    value: '#101010',
+                    label: 'Trail Color',
+                    onChange: objectOnChange('color2', updateObject),
+                },
+                rimColor: {
+                    value: '#1a66cc',
+                    label: 'Rim Color',
+                    onChange: objectOnChange('rimColor', updateObject),
+                },
+                rimIntensity: {
+                    value: 0.4, min: 0, max: 2, step: 0.05,
+                    label: 'Rim Intensity',
+                    onChange: objectOnChange('rimIntensity', updateObject),
+                },
+                rimPower: {
+                    value: 3.0, min: 0.5, max: 10, step: 0.1,
+                    label: 'Rim Power',
+                    onChange: objectOnChange('rimPower', updateObject),
+                },
+            }, { collapsed: true }),
+
+            'Bend': folder({
+                bendAmount: {
+                    value: 0, min: -2, max: 2, step: 0.01,
+                    label: 'Amount',
+                    onChange: objectOnChange('bendAmount', updateObject),
+                },
+                bendAngle: {
+                    value: 0, min: 0, max: 360, step: 1,
+                    label: 'Angle',
+                    onChange: objectOnChange('bendAngle', updateObject),
+                },
+                bendAxis: {
+                    value: 'Y',
+                    options: ['X', 'Y', 'Z'],
+                    label: 'Axis',
+                    onChange: objectOnChange('bendAxis', updateObject),
+                },
+                bendOffset: {
+                    value: 0, min: -2, max: 2, step: 0.01,
+                    label: 'Offset',
+                    onChange: objectOnChange('bendOffset', updateObject),
+                },
+                bendLimit: {
+                    value: 1, min: 0.1, max: 5, step: 0.01,
+                    label: 'Limit',
+                    onChange: objectOnChange('bendLimit', updateObject),
+                },
+            }, { collapsed: true }),
+
+            'Visual FX': folder({
+                wobbleAmount: {
+                    value: 0, min: 0, max: 0.5, step: 0.01,
+                    label: 'Wobble Amount',
+                    onChange: objectOnChange('wobbleAmount', updateObject),
+                },
+                wobbleSpeed: {
+                    value: 1, min: 0.1, max: 10, step: 0.1,
+                    label: 'Wobble Speed',
+                    onChange: objectOnChange('wobbleSpeed', updateObject),
+                },
+                wobbleScale: {
+                    value: 2, min: 0.1, max: 20, step: 0.1,
+                    label: 'Wobble Scale',
+                    onChange: objectOnChange('wobbleScale', updateObject),
+                },
+                chromaticAberration: {
+                    value: 0, min: 0, max: 0.05, step: 0.001,
+                    label: 'Chromatic Ab.',
+                    onChange: objectOnChange('chromaticAberration', updateObject),
+                },
+                pulseIntensity: {
+                    value: 0, min: 0, max: 0.5, step: 0.01,
+                    label: 'Pulse Intensity',
+                    onChange: objectOnChange('pulseIntensity', updateObject),
+                },
+                pulseSpeed: {
+                    value: 1, min: 0.1, max: 10, step: 0.1,
+                    label: 'Pulse Speed',
+                    onChange: objectOnChange('pulseSpeed', updateObject),
+                },
+                scanlineIntensity: {
+                    value: 0, min: 0, max: 1, step: 0.01,
+                    label: 'Scanlines',
+                    onChange: objectOnChange('scanlineIntensity', updateObject),
+                },
+            }, { collapsed: true }),
         }),
         []
     );
@@ -132,6 +226,21 @@ export const ObjectControls = () => {
             bendAxis: obj.bendAxis,
             bendOffset: obj.bendOffset,
             bendLimit: obj.bendLimit,
+            svgExtrusionDepth: obj.svgExtrusionDepth,
+            rimIntensity: obj.rimIntensity,
+            rimPower: obj.rimPower,
+            wireOpacity: obj.wireOpacity,
+            wireIntensity: obj.wireIntensity,
+            layerDelay: obj.layerDelay,
+            torusThickness: obj.torusThickness,
+            lineBrightness: obj.lineBrightness,
+            wobbleAmount: obj.wobbleAmount,
+            wobbleSpeed: obj.wobbleSpeed,
+            wobbleScale: obj.wobbleScale,
+            chromaticAberration: obj.chromaticAberration,
+            pulseIntensity: obj.pulseIntensity,
+            pulseSpeed: obj.pulseSpeed,
+            scanlineIntensity: obj.scanlineIntensity,
         });
     }, [obj, set]);
 

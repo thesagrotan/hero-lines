@@ -32,11 +32,26 @@ export interface SceneObject {
     rimColor: string;
     timeNoise: number;
     svgData?: SvgData;
+    svgExtrusionDepth: number;
+    rimIntensity: number;
+    rimPower: number;
+    wireOpacity: number;
+    wireIntensity: number;
+    layerDelay: number;
+    torusThickness: number;
+    lineBrightness: number;
     bendAmount: number;
     bendAngle: number;
     bendAxis: 'X' | 'Y' | 'Z';
     bendOffset: number;
     bendLimit: number;
+    wobbleAmount: number;
+    wobbleSpeed: number;
+    wobbleScale: number;
+    chromaticAberration: number;
+    pulseIntensity: number;
+    pulseSpeed: number;
+    scanlineIntensity: number;
 }
 
 export interface SceneState {

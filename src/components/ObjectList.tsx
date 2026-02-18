@@ -9,6 +9,7 @@ export const ObjectList: React.FC = () => {
         selectedObjectId,
         selectObject,
         updateObject,
+        applySettingsToAll,
         removeObject,
         duplicateObject
     } = useSceneStore();
@@ -50,6 +51,26 @@ export const ObjectList: React.FC = () => {
                                 title="Duplicate Object"
                             >
                                 📑
+                            </button>
+                            <button
+                                className="action-btn apply-colors"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    applySettingsToAll(obj.id, 'colors');
+                                }}
+                                title="Apply Colors to All"
+                            >
+                                🎨
+                            </button>
+                            <button
+                                className="action-btn apply-lines"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    applySettingsToAll(obj.id, 'lines');
+                                }}
+                                title="Apply Lines to All"
+                            >
+                                📏
                             </button>
                             <button
                                 className="action-btn delete"

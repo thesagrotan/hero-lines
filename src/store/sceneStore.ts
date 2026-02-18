@@ -17,6 +17,7 @@ interface SceneStore {
     removeObject: (id: string) => void;
     duplicateObject: (id: string) => void;
     updateObject: (id: string, patch: Partial<SceneObject>) => void;
+    applySettingsToAll: (sourceId: string, type: 'colors' | 'lines') => void;
     selectObject: (id: string | null) => void;
     getSelectedObject: () => SceneObject | undefined;
 
@@ -72,6 +73,21 @@ const INITIAL_OBJECT: SceneObject = {
     bendAxis: 'X',
     bendOffset: 0,
     bendLimit: 1.0,
+    svgExtrusionDepth: 0.5,
+    rimIntensity: 0.4,
+    rimPower: 3.0,
+    wireOpacity: 0.1,
+    wireIntensity: 0.1,
+    layerDelay: 0.02,
+    torusThickness: 0.2,
+    lineBrightness: 2.5,
+    wobbleAmount: 0,
+    wobbleSpeed: 1,
+    wobbleScale: 2,
+    chromaticAberration: 0,
+    pulseIntensity: 0,
+    pulseSpeed: 1,
+    scanlineIntensity: 0,
 };
 
 export const useSceneStore = create<SceneStore>((set, get) => ({
@@ -130,6 +146,42 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     updateObject: (id, patch) => set((state) => ({
         objects: state.objects.map((o) => (o.id === id ? { ...o, ...patch } : o))
     })),
+
+    applySettingsToAll: (sourceId, type) => {
+        const { objects } = get();
+        const source = objects.find(o => o.id === sourceId);
+        if (!source) return;
+
+        let patch: Partial<SceneObject> = {};
+        if (type === 'colors') {
+            patch = {
+                color1: source.color1,
+                color2: source.color2,
+                rimColor: source.rimColor
+            };
+        } else {
+            patch = {
+                numLines: source.numLines,
+                thickness: source.thickness,
+                orientation: source.orientation,
+                speed: source.speed,
+                longevity: source.longevity,
+                ease: source.ease,
+                timeNoise: source.timeNoise,
+                wobbleAmount: source.wobbleAmount,
+                wobbleSpeed: source.wobbleSpeed,
+                wobbleScale: source.wobbleScale,
+                chromaticAberration: source.chromaticAberration,
+                pulseIntensity: source.pulseIntensity,
+                pulseSpeed: source.pulseSpeed,
+                scanlineIntensity: source.scanlineIntensity,
+            };
+        }
+
+        set((state) => ({
+            objects: state.objects.map(o => ({ ...o, ...patch }))
+        }));
+    },
 
     selectObject: (id) => set({ selectedObjectId: id }),
 
@@ -194,7 +246,61 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     },
 
     setupInfiniteDevicePass: () => {
-        const { updateObject, setScene } = get();
+        const { objects, setScene } = get();
+
+        // Inherit style from current objects if possible
+        const baseObj = objects[0];
+        const baseStyle = baseObj ? {
+            color1: baseObj.color1,
+            color2: baseObj.color2,
+            rimColor: baseObj.rimColor,
+            numLines: baseObj.numLines,
+            thickness: baseObj.thickness,
+            speed: baseObj.speed,
+            longevity: baseObj.longevity,
+            ease: baseObj.ease,
+            timeNoise: baseObj.timeNoise,
+            svgExtrusionDepth: baseObj.svgExtrusionDepth,
+            rimIntensity: baseObj.rimIntensity,
+            rimPower: baseObj.rimPower,
+            wireOpacity: baseObj.wireOpacity,
+            wireIntensity: baseObj.wireIntensity,
+            layerDelay: baseObj.layerDelay,
+            torusThickness: baseObj.torusThickness,
+            lineBrightness: baseObj.lineBrightness,
+            wobbleAmount: baseObj.wobbleAmount,
+            wobbleSpeed: baseObj.wobbleSpeed,
+            wobbleScale: baseObj.wobbleScale,
+            chromaticAberration: baseObj.chromaticAberration,
+            pulseIntensity: baseObj.pulseIntensity,
+            pulseSpeed: baseObj.pulseSpeed,
+            scanlineIntensity: baseObj.scanlineIntensity,
+        } : {
+            color1: '#db5a00',
+            color2: '#454545',
+            rimColor: '#101010',
+            numLines: 35,
+            thickness: 0.012,
+            speed: 0.8,
+            longevity: 0.6,
+            ease: 0.5,
+            timeNoise: 0.5,
+            svgExtrusionDepth: 0.5,
+            rimIntensity: 0.4,
+            rimPower: 3.0,
+            wireOpacity: 0.1,
+            wireIntensity: 0.1,
+            layerDelay: 0.02,
+            torusThickness: 0.2,
+            lineBrightness: 2.5,
+            wobbleAmount: 0,
+            wobbleSpeed: 1,
+            wobbleScale: 2,
+            chromaticAberration: 0,
+            pulseIntensity: 0,
+            pulseSpeed: 1,
+            scanlineIntensity: 0,
+        };
 
         // Use predefined device order for consistent feel
         const deviceNames = Object.keys(DEVICE_TEMPLATES);
@@ -210,20 +316,22 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
                 shapeType: template.shapeType,
                 borderRadius: template.borderRadius,
                 orientation: template.orientation,
-                numLines: 35,
-                thickness: 0.012,
-                speed: 0.8,
-                longevity: 0.6,
-                ease: 0.5,
-                color1: i % 2 === 0 ? '#db5a00' : '#00aedb',
-                color2: '#454545',
-                rimColor: '#101010',
-                timeNoise: 0.5,
+                ...baseStyle,
+                // Keep the alternating color pattern only if we don't have a base object
+                color1: baseObj ? baseStyle.color1 : (i % 2 === 0 ? '#db5a00' : '#00aedb'),
                 bendAmount: 0,
                 bendAngle: 0,
                 bendAxis: 'Y',
                 bendOffset: 0,
                 bendLimit: 1.0,
+                svgExtrusionDepth: baseStyle.svgExtrusionDepth,
+                rimIntensity: baseStyle.rimIntensity,
+                rimPower: baseStyle.rimPower,
+                wireOpacity: baseStyle.wireOpacity,
+                wireIntensity: baseStyle.wireIntensity,
+                layerDelay: baseStyle.layerDelay,
+                torusThickness: baseStyle.torusThickness,
+                lineBrightness: baseStyle.lineBrightness,
             };
         });
 
