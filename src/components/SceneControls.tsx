@@ -51,6 +51,13 @@ export const SceneControls = () => {
                 }
             }
         },
+        resolutionScale: {
+            value: scene.resolutionScale,
+            min: 0.1, max: 1.0, step: 0.05, label: 'Render Quality',
+            onChange: (v: any) => {
+                if (v !== useSceneStore.getState().scene.resolutionScale) setScene({ resolutionScale: v });
+            }
+        },
         'Device Animation': folder({
             'Auto Cycle': {
                 value: scene.autoCycle.enabled,
@@ -83,10 +90,11 @@ export const SceneControls = () => {
             transitionSpeed: scene.transitionSpeed,
             transitionEase: scene.transitionEase,
             theme: scene.theme,
+            resolutionScale: scene.resolutionScale,
             'Auto Cycle': scene.autoCycle.enabled,
             'Pause Time': scene.autoCycle.pauseTime,
         } as any);
-    }, [scene.camera, scene.zoom, scene.bgColor, scene.transitionSpeed, scene.transitionEase, scene.theme, scene.autoCycle.enabled, scene.autoCycle.pauseTime, set]);
+    }, [scene.camera, scene.zoom, scene.bgColor, scene.transitionSpeed, scene.transitionEase, scene.theme, scene.resolutionScale, scene.autoCycle.enabled, scene.autoCycle.pauseTime, set]);
 
     return null;
 };

@@ -27,6 +27,9 @@ interface SceneStore {
     applyDeviceTemplate: (templateName: string) => void;
     setupInfiniteDevicePass: () => void;
     toggleInfinitePass: () => void;
+    // Runtime Stats
+    fps: number;
+    setFps: (fps: number) => void;
 }
 
 const INITIAL_SCENE_STATE: SceneState = {
@@ -44,7 +47,8 @@ const INITIAL_SCENE_STATE: SceneState = {
         enabled: false,
         speed: 2.0,
         spacing: 8.0
-    }
+    },
+    resolutionScale: 1.0
 };
 
 const INITIAL_OBJECT_ID = 'main-obj';
@@ -101,6 +105,9 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
     scene: INITIAL_SCENE_STATE,
     objects: [INITIAL_OBJECT],
     selectedObjectId: INITIAL_OBJECT_ID,
+    fps: 0,
+
+    setFps: (fps) => set({ fps }),
 
     setScene: (patch) => set((state) => ({
         scene: { ...state.scene, ...patch }

@@ -79,6 +79,7 @@ export interface SceneState {
         speed: number;
         spacing: number;
     };
+    resolutionScale: number;
 }
 
 export interface RenderableObject extends SceneObject {

@@ -1,57 +1,74 @@
 #version 300 es
 precision highp float;
 out vec4 fragColor;
-uniform vec2 u_resolution;
-uniform float u_time;
-uniform vec3 u_camPos;
-uniform vec3 u_boxSize;
-uniform vec3 u_rot; 
-uniform float u_borderRadius;
-uniform float u_borderThickness;
-uniform float u_speed;
-uniform float u_trailLength;
-uniform float u_ease;
-uniform vec3 u_color1;
-uniform vec3 u_color2;
-uniform vec3 u_rimColor;
-uniform float u_numLines;
-uniform int u_shapeType; 
-uniform int u_shapeTypeNext;
-uniform float u_morphFactor;
-uniform int u_orientation;
-uniform vec3 u_bgColor;
-uniform vec3 u_position;
-uniform float u_timeNoise;
+layout(std140) uniform SceneData {
+    vec2 u_resolution;
+    float u_time;
+    float _pad0;
+    vec3 u_camPos;
+    vec3 u_bgColor;
+};
+
+layout(std140) uniform ObjectData {
+    vec3 u_position; float _p1;
+    vec3 u_boxSize;  float _p2;
+    vec3 u_rot;      float _p3;
+    vec3 u_color1;   float _p4;
+    vec3 u_color2;   float _p5;
+    vec3 u_rimColor; float _p6;
+    vec3 u_secondaryPosition; float _p7;
+    vec3 u_secondaryRotation; float _p8;
+    vec3 u_secondaryDimensions; float _p9;
+    
+    float u_borderRadius;
+    float u_borderThickness;
+    float u_speed;
+    float u_trailLength;
+    
+    float u_ease;
+    float u_numLines;
+    float u_morphFactor;
+    float u_timeNoise;
+    
+    float u_svgExtrusionDepth;
+    float u_svgSpread;
+    float u_svgResolution;
+    float u_bendAmount;
+    
+    float u_bendAngle;
+    float u_bendOffset;
+    float u_bendLimit;
+    float u_rimIntensity;
+    
+    float u_rimPower;
+    float u_wireOpacity;
+    float u_wireIntensity;
+    float u_layerDelay;
+    
+    float u_torusThickness;
+    float u_lineBrightness;
+    float u_wobbleAmount;
+    float u_wobbleSpeed;
+    
+    float u_wobbleScale;
+    float u_chromaticAberration;
+    float u_pulseIntensity;
+    float u_pulseSpeed;
+    
+    float u_scanlineIntensity;
+    float u_compositeSmoothness;
+    int u_shapeType;
+    int u_shapeTypeNext;
+    
+    int u_orientation;
+    int u_hasSvgSdf;
+    int u_bendAxis;
+    int u_compositeMode;
+    
+    int u_secondaryShapeType;
+};
+
 uniform sampler2D u_svgSdfTex;
-uniform float u_svgExtrusionDepth;
-uniform int u_hasSvgSdf;
-uniform float u_svgSpread;
-uniform float u_svgResolution;
-uniform float u_bendAmount;
-uniform float u_bendAngle;
-uniform float u_bendOffset;
-uniform float u_bendLimit;
-uniform int u_bendAxis;
-uniform float u_rimIntensity;
-uniform float u_rimPower;
-uniform float u_wireOpacity;
-uniform float u_wireIntensity;
-uniform float u_layerDelay;
-uniform float u_torusThickness;
-uniform float u_lineBrightness;
-uniform float u_wobbleAmount;
-uniform float u_wobbleSpeed;
-uniform float u_wobbleScale;
-uniform float u_chromaticAberration;
-uniform float u_pulseIntensity;
-uniform float u_pulseSpeed;
-uniform float u_scanlineIntensity;
-uniform int u_compositeMode;
-uniform int u_secondaryShapeType;
-uniform vec3 u_secondaryPosition;
-uniform vec3 u_secondaryRotation;
-uniform vec3 u_secondaryDimensions;
-uniform float u_compositeSmoothness;
 
 float hash(float n) {
     return fract(sin(n) * 43758.5453123);
@@ -248,14 +265,7 @@ float getShapeDist(vec3 p, vec3 boxSize, float radius, int shapeType) {
 
 
 
-float map(vec3 p, vec3 boxSize, float radius) {
-    vec3 pBent = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
-    
-    // Apply Pulse
-    float pulse = 1.0;
-    if (u_pulseIntensity > 0.0) {
-        pulse += sin(u_time * u_pulseSpeed) * u_pulseIntensity;
-    }
+float mapBody(vec3 pBent, vec3 boxSize, float radius, float pulse, float wobbleTime) {
     vec3 pScaled = pBent / pulse;
     
     float d1;
@@ -272,41 +282,45 @@ float map(vec3 p, vec3 boxSize, float radius) {
         d = d1;
     } else {
         // Evaluate secondary shape
-        // 1. Move
         vec3 pSecondary = pScaled - u_secondaryPosition;
-        // 2. Rotate
         pSecondary *= rotZ(u_secondaryRotation.z) * rotY(u_secondaryRotation.y) * rotX(u_secondaryRotation.x);
-        
         float d2 = getShapeDist(pSecondary, u_secondaryDimensions, radius, u_secondaryShapeType);
         
-        if (u_compositeMode == 1) d = min(d1, d2); // Union
-        else if (u_compositeMode == 2) d = max(d1, -d2); // Subtract
-        else if (u_compositeMode == 3) d = max(d1, d2); // Intersect
-        else if (u_compositeMode == 4) d = smin(d1, d2, u_compositeSmoothness); // Smooth Union
+        if (u_compositeMode == 1) d = min(d1, d2);
+        else if (u_compositeMode == 2) d = max(d1, -d2);
+        else if (u_compositeMode == 3) d = max(d1, d2);
+        else if (u_compositeMode == 4) d = smin(d1, d2, u_compositeSmoothness);
         else d = d1;
     }
     
-    // Apply scale compensation for distance field
     d *= pulse;
     
-    // Apply Wobble
     if (u_wobbleAmount > 0.0) {
-        float w = noise(pBent * u_wobbleScale + u_time * u_wobbleSpeed) * u_wobbleAmount;
+        float w = noise(pBent * u_wobbleScale + wobbleTime) * u_wobbleAmount;
         d += w;
     }
-    
     return d;
 }
 
-vec3 calcNormal(vec3 p, vec3 boxSize, float radius) {
+float map(vec3 p, vec3 boxSize, float radius, float pulse, float wobbleTime) {
+    vec3 pBent = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+    return mapBody(pBent, boxSize, radius, pulse, wobbleTime);
+}
+
+vec3 calcNormalBent(vec3 pBent, vec3 boxSize, float radius, float pulse, float wobbleTime) {
     const float h = 0.0001;
     const vec2 k = vec2(1.0, -1.0);
-    return normalize(k.xyy * map(p + k.xyy * h, boxSize, radius) + k.yyx * map(p + k.yyx * h, boxSize, radius) + k.yxy * map(p + k.yxy * h, boxSize, radius) + k.xxx * map(p + k.xxx * h, boxSize, radius));
+    return normalize(
+        k.xyy * mapBody(pBent + k.xyy * h, boxSize, radius, pulse, wobbleTime) + 
+        k.yyx * mapBody(pBent + k.yyx * h, boxSize, radius, pulse, wobbleTime) + 
+        k.yxy * mapBody(pBent + k.yxy * h, boxSize, radius, pulse, wobbleTime) + 
+        k.xxx * mapBody(pBent + k.xxx * h, boxSize, radius, pulse, wobbleTime)
+    );
 }
 
 
 vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
-    vec3 m = 1.0 / rd, n = m * ro, k = abs(m) * (boxSize * 1.5); // Wider box to account for effects
+    vec3 m = 1.0 / rd, n = m * ro, k = abs(m) * (boxSize * 2.0); // Wider box for bending/wobble/laptop (P1)
     vec3 t1 = -n - k, t2 = -n + k;
     float tN = max(max(t1.x, t1.y), t1.z), tF = min(min(t2.x, t2.y), t2.z);
     return (tN > tF || tF < 0.0) ? vec2(-1.0) : vec2(tN, tF);
@@ -334,7 +348,10 @@ vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
     float dotV = (u_orientation == 1) ? abs(n.y) : (u_orientation == 2) ? abs(n.z) : (u_orientation == 3) ? abs(dot(n, vec3(0.577))) : abs(n.x);
     float lineAlpha = lineMask * isActive * smoothstep(0.1, 0.4, 1.0 - dotV);
     
-    vec3 wireColor = (u_shapeType == 0) ? u_color1 * u_wireIntensity * max(max((1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.y) - boxSize.y))), (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.y) - boxSize.y))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.z) - boxSize.z)))), (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.z) - boxSize.z)))) : vec3(0);
+    vec3 wireColor = vec3(0);
+    if (u_shapeType == 0 && u_wireIntensity > 0.0) {
+        wireColor = u_color1 * u_wireIntensity * max(max((1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.y) - boxSize.y))), (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.y) - boxSize.y))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.z) - boxSize.z)))), (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.x) - boxSize.x))) * (1.0 - smoothstep(thickness * 2.5 - ds, thickness * 2.5 + ds, abs(abs(p.z) - boxSize.z))));
+    }
     float wireAlpha = (length(wireColor) > 0.001) ? u_wireOpacity : 0.0;
 
     vec3 baseColor = mix(u_color1, u_color2, isActive);
@@ -345,52 +362,97 @@ vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
     return vec4(finalRGB * boost, totalAlpha * (isBack ? 0.5 : 1.0));
 }
 
-vec3 render(vec3 ro, vec3 rd, vec3 ro_l, float tFar) {
+vec4 render(vec3 ro_l, vec3 rd, vec3 rdR, vec3 rdB) {
+    float pulse = 1.0;
+    if (u_pulseIntensity > 0.0) {
+        pulse += sin(u_time * u_pulseSpeed) * u_pulseIntensity;
+    }
+    float wobbleTime = u_time * u_wobbleSpeed;
+
     vec2 tBox = intersectBox(ro_l, rd, u_boxSize);
     vec3 col = vec3(0.0);
     float alpha = 0.0;
     
-    if (tBox.x > 0.0) {
-        float t = tBox.x; bool hit = false; vec3 p;
+    if (tBox.y > 0.0) {
+        float t = max(0.0, tBox.x); bool hit = false; vec3 p;
         for(int i=0; i<64; i++) { 
             p = ro_l + rd * t; 
-            float d = map(p, u_boxSize, u_borderRadius); 
+            float d = map(p, u_boxSize, u_borderRadius, pulse, wobbleTime); 
             if(d < 0.001) { hit = true; break; } 
             t += d; 
             if(t > tBox.y) break; 
         }
         if(hit) { 
             vec3 pBent = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
-            vec3 n = calcNormal(pBent, u_boxSize, u_borderRadius);
-            vec4 surface = getSurfaceColor(pBent, u_boxSize, u_time, u_borderThickness, false, n);
+            vec3 n = calcNormalBent(pBent, u_boxSize, u_borderRadius, pulse, wobbleTime);
+            
             float rim = pow(1.0 - max(dot(-rd, n), 0.0), u_rimPower) * u_rimIntensity;
             vec3 rimRGB = u_rimColor * rim;
             
-            col += surface.rgb + rimRGB;
-            alpha += surface.a + rim;
+            if (u_chromaticAberration > 0.0) {
+                float dotRD = dot(rd, n);
+                float tR = t * dotRD / max(dot(rdR, n), 0.0001);
+                float tB = t * dotRD / max(dot(rdB, n), 0.0001);
+                
+                vec3 pBentR = opBend(ro_l + rdR * tR, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+                vec3 pBentB = opBend(ro_l + rdB * tB, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+                
+                vec4 resG = getSurfaceColor(pBent, u_boxSize, u_time, u_borderThickness, false, n);
+                vec4 resR = getSurfaceColor(pBentR, u_boxSize, u_time, u_borderThickness, false, n);
+                vec4 resB = getSurfaceColor(pBentB, u_boxSize, u_time, u_borderThickness, false, n);
+                
+                col.r = resR.r + rimRGB.r;
+                col.g = resG.g + rimRGB.g;
+                col.b = resB.b + rimRGB.b;
+                alpha = max(resR.a, max(resG.a, resB.a)) + rim;
+            } else {
+                vec4 surface = getSurfaceColor(pBent, u_boxSize, u_time, u_borderThickness, false, n);
+                col = surface.rgb + rimRGB;
+                alpha = surface.a + rim;
+            }
         }
         
-        // Only do back pass if front is not fully opaque and we have budget
         if (alpha < 0.95) {
             vec3 ro_b = ro_l + rd * tBox.y, rd_b = -rd; float tb = 0.0; hit = false;
-            // Back pass uses fewer iterations
             for(int i=0; i<32; i++) { 
+                // Simple shapes converge faster, reduce back-pass steps (P1 Optimization)
+                if (u_compositeMode == 0 && i >= 16) break;
+                
                 p = ro_b + rd_b * tb; 
-                float d = map(p, u_boxSize, u_borderRadius); 
+                float d = map(p, u_boxSize, u_borderRadius, pulse, wobbleTime); 
                 if(d < 0.001) { hit = true; break; } 
                 tb += d; 
-                if(tb > (tBox.y - tBox.x)) break; 
+                if(tb > (tBox.y - tBox.x + 0.1)) break; 
             }
             if(hit) {
                 vec3 pBentB = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
-                vec3 nB = calcNormal(pBentB, u_boxSize, u_borderRadius);
-                vec4 surfaceBack = getSurfaceColor(pBentB, u_boxSize, u_time, u_borderThickness, true, nB);
-                col += surfaceBack.rgb * (1.0 - alpha); 
-                alpha += surfaceBack.a * (1.0 - alpha);
+                vec3 nB = calcNormalBent(pBentB, u_boxSize, u_borderRadius, pulse, wobbleTime);
+                
+                if (u_chromaticAberration > 0.0) {
+                    float dotRDB = dot(rd_b, nB);
+                    float tRB = tb * dotRDB / max(dot(-rdR, nB), 0.0001);
+                    float tBB = tb * dotRDB / max(dot(-rdB, nB), 0.0001);
+                    
+                    vec3 pBentRB = opBend(ro_b + (-rdR) * tRB, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+                    vec3 pBentBB = opBend(ro_b + (-rdB) * tBB, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+                    
+                    vec4 resGB = getSurfaceColor(pBentB, u_boxSize, u_time, u_borderThickness, true, nB);
+                    vec4 resRB = getSurfaceColor(pBentRB, u_boxSize, u_time, u_borderThickness, true, nB);
+                    vec4 resBB = getSurfaceColor(pBentBB, u_boxSize, u_time, u_borderThickness, true, nB);
+                    
+                    col.r += resRB.r * (1.0 - alpha);
+                    col.g += resGB.g * (1.0 - alpha);
+                    col.b += resBB.b * (1.0 - alpha);
+                    alpha += resGB.a * (1.0 - alpha);
+                } else {
+                    vec4 surfaceBack = getSurfaceColor(pBentB, u_boxSize, u_time, u_borderThickness, true, nB);
+                    col += surfaceBack.rgb * (1.0 - alpha); 
+                    alpha += surfaceBack.a * (1.0 - alpha);
+                }
             }
         }
     }
-    return col;
+    return vec4(col, alpha);
 }
 
 void main() {
@@ -398,22 +460,25 @@ void main() {
     mat3 mI = transpose(rotZ(u_rot.z) * rotY(u_rot.y) * rotX(u_rot.x));
     
     vec3 ro_l = mI * (u_camPos - u_position);
-    vec3 fwd = normalize(mI * -u_camPos); 
-    vec3 right = normalize(cross(vec3(0, 1, 0), fwd)), up = cross(fwd, right);
     
-    vec3 finalCol;
+    vec3 worldFwd = normalize(-u_camPos);
+    vec3 worldRight = normalize(cross(vec3(0, 1, 0), worldFwd));
+    vec3 worldUp = cross(worldFwd, worldRight);
+
+    vec3 fwd = mI * worldFwd;
+    vec3 right = mI * worldRight;
+    vec3 up = mI * worldUp;
+    
+    vec3 rdG = normalize(fwd + uv.x * right + uv.y * up);
+    vec3 rdR = rdG, rdB = rdG;
+    
     if (u_chromaticAberration > 0.0) {
-        vec3 rdR = normalize(fwd + (uv.x + u_chromaticAberration) * right + uv.y * up);
-        vec3 rdG = normalize(fwd + uv.x * right + uv.y * up);
-        vec3 rdB = normalize(fwd + (uv.x - u_chromaticAberration) * right + uv.y * up);
-        
-        finalCol.r = render(vec3(0), rdR, ro_l, 20.0).r;
-        finalCol.g = render(vec3(0), rdG, ro_l, 20.0).g;
-        finalCol.b = render(vec3(0), rdB, ro_l, 20.0).b;
-    } else {
-        vec3 rd = normalize(fwd + uv.x * right + uv.y * up);
-        finalCol = render(vec3(0), rd, ro_l, 20.0);
+        rdR = normalize(fwd + (uv.x + u_chromaticAberration) * right + uv.y * up);
+        rdB = normalize(fwd + (uv.x - u_chromaticAberration) * right + uv.y * up);
     }
+    
+    vec4 res = render(ro_l, rdG, rdR, rdB);
+    vec3 finalCol = res.rgb;
     
     // Apply Scanlines
     if (u_scanlineIntensity > 0.0) {
@@ -421,5 +486,5 @@ void main() {
         finalCol *= mix(1.0, s, u_scanlineIntensity * 0.5);
     }
     
-    fragColor = vec4(finalCol, 1.0);
+    fragColor = vec4(finalCol, res.a);
 }

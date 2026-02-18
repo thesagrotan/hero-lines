@@ -94,9 +94,23 @@ export function parseSvgToSdfTextureAsync(
             dilateMask(mask, resolution, resolution, 4);
             ensureConnectivity(mask, resolution, resolution);
 
-            // --- 6. Compute signed distance field ---
-            const sdf = computeSdf(mask, resolution, resolution, SDF_SPREAD);
-            resolve(sdf);
+            // --- 6. Compute signed distance field via Worker ---
+            const worker = new Worker(new URL('./sdf.worker.ts', import.meta.url), { type: 'module' });
+            worker.onmessage = (e) => {
+                resolve(e.data.sdf);
+                worker.terminate();
+            };
+            worker.onerror = (err) => {
+                console.error('SDF Worker error:', err);
+                resolve(null);
+                worker.terminate();
+            };
+            worker.postMessage({
+                mask,
+                width: resolution,
+                height: resolution,
+                spread: SDF_SPREAD
+            }, [mask.buffer]);
         };
 
         img.onerror = () => {
@@ -107,55 +121,6 @@ export function parseSvgToSdfTextureAsync(
 
         img.src = url;
     });
-}
-
-/**
- * Brute-force distance transform to compute an SDF from a binary mask.
- * Searches within a window of `spread` pixels around each pixel.
- *
- * Returns Float32Array with values in [-1, 1]:
- *   negative = inside the shape
- *   positive = outside the shape
- */
-function computeSdf(
-    mask: Uint8Array,
-    width: number,
-    height: number,
-    spread: number
-): Float32Array {
-    const sdf = new Float32Array(width * height);
-
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const idx = y * width + x;
-            const inside = mask[idx] === 1;
-
-            let minDist = spread;
-
-            // Search window
-            const x0 = Math.max(0, x - spread);
-            const x1 = Math.min(width - 1, x + spread);
-            const y0 = Math.max(0, y - spread);
-            const y1 = Math.min(height - 1, y + spread);
-
-            for (let sy = y0; sy <= y1; sy++) {
-                for (let sx = x0; sx <= x1; sx++) {
-                    const sIdx = sy * width + sx;
-                    if (mask[sIdx] !== mask[idx]) {
-                        const dx = x - sx;
-                        const dy = y - sy;
-                        const dist = Math.sqrt(dx * dx + dy * dy);
-                        if (dist < minDist) minDist = dist;
-                    }
-                }
-            }
-
-            // Sign: negative inside, positive outside
-            sdf[idx] = (inside ? -minDist : minDist) / spread;
-        }
-    }
-
-    return sdf;
 }
 
 /**

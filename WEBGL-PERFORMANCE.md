@@ -38,15 +38,16 @@ The renderer is a **fullscreen-quad raymarcher**. Every visible object triggers 
 
 ---
 
-#### 3. `calcNormal` Is Expensive (4 extra `map()` calls per hit)
+#### 3. `calcNormal` Is Expensive ✅
 **File**: `fragment.glsl:301-305`
 
 **Problem**: Central-difference normal estimation calls `map()` four times with offset positions. Each `map()` call involves bending, pulse scaling, composite SDF evaluation, and optional wobble noise.
 
-**Steps**:
-1. Use **tetrahedron gradient** estimation (already in use — just confirm 4 taps, which is optimal for tetrahedron method).
-2. Cache the `opBend` result: pass the already-bent `p` into `calcNormal` so the bend is not recomputed 4 extra times. Currently `calcNormal` calls `map()` which calls `opBend()` internally, so each normal costs 4 extra bend operations.
-3. If normals are only needed for rim lighting and surface orientation, consider a **rougher estimate** (e.g., 2 taps along the dominant axis).
+**Optimization Done**:
+1. Confirmed tetrahedron gradient (4 taps).
+2. Cached `opBend`: `pBent` is passed to `calcNormalBent`, avoiding 4 extra bend operations.
+3. Pre-calculated `pulse` and `wobbleTime` in `render()` to avoid redundant trig and noise-basis math in all 4 taps and 64 raymarch steps.
+4. (Optional) Rougher estimate considered but 4-tap kept for quality, as the above optimizations already significantly reduced the cost.
 
 ---
 
@@ -64,10 +65,12 @@ The renderer is a **fullscreen-quad raymarcher**. Every visible object triggers 
 
 ---
 
-#### 5. Per-Frame Object Cloning
+#### 5. Per-Frame Object Cloning ✅ [DONE]
 **File**: `renderUtils.ts:7-17` · `useRenderer.ts:59`
 
 **Problem**: `buildRenderableObjects()` creates a new object array with cloned `position`, `dimensions`, `rotation`, and `svgData` every single frame via spread. At 60 FPS with 5 objects, that's 300 object allocations + 1200 sub-object allocations per second, generating GC pressure.
+
+**Status**: Optimized by replacing `buildRenderableObjects` with `updateRenderableObjects` which mutates a persistent `renderedObjectsRef` buffer in-place.
 
 **Steps**:
 1. **Pre-allocate** a reusable `RenderableObject[]` buffer and mutate it in-place each frame instead of cloning.
@@ -76,10 +79,12 @@ The renderer is a **fullscreen-quad raymarcher**. Every visible object triggers 
 
 ---
 
-#### 6. Uniform Upload Overhead (40+ `gl.uniform*` calls per object per frame)
+#### 6. Uniform Upload Overhead [COMPLETED]
 **File**: `WebGLRenderer.ts:150-232`
 
 **Problem**: Per object, ~40 individual `gl.uniform*` calls are made. While each call is fast, the cumulative driver overhead is non-trivial, especially with multiple objects.
+
+**Solution**: Grouped scene and object uniforms into `layout(std140)` Uniform Buffer Objects. Reduced individual uniform calls to a single `gl.bufferSubData()` per object and one per frame for scene data.
 
 **Steps**:
 1. Pack per-object data into a **Uniform Buffer Object (UBO)** with a single `gl.bufferSubData()` call per object. Group related uniforms (e.g., all `vec3`s together, then all `float`s) to respect `std140` alignment.
@@ -88,7 +93,7 @@ The renderer is a **fullscreen-quad raymarcher**. Every visible object triggers 
 
 ---
 
-#### 7. Zustand `getState()` Called Every Frame
+#### 7. Zustand `getState()` Called Every Frame — ✅ DONE
 **File**: `useRenderer.ts:40`
 
 **Problem**: `useSceneStore.getState()` is called inside `requestAnimationFrame`. While Zustand's `getState()` is cheapish, it forces a full destructure of the store including transition data, even if nothing changed.
@@ -101,7 +106,7 @@ The renderer is a **fullscreen-quad raymarcher**. Every visible object triggers 
 
 ### 🟢 P2 — Medium (quality-of-life / edge cases)
 
-#### 8. SVG SDF Brute-Force Distance Transform
+#### 8. SVG SDF Brute-Force Distance Transform (DONE ✅)
 **File**: `svgParser.ts:120-159`
 
 **Problem**: `computeSdf()` uses an O(n² · spread²) brute-force search. For a 512×512 texture with spread=32, that's ~512² × 64² ≈ 1.1 billion iterations. This blocks the main thread during SVG load.
@@ -113,34 +118,32 @@ The renderer is a **fullscreen-quad raymarcher**. Every visible object triggers 
 
 ---
 
-#### 9. Canvas Resize Sets Full `window.innerWidth`
+#### 9. Canvas Resize Sets Full `window.innerWidth` ✅
 **File**: `useRenderer.ts:153-158`
-
 **Problem**: Canvas is always set to full device resolution. On Retina/HiDPI displays this means 4× the pixel count (e.g., 5120×2880 on a 5K display), all fed through an expensive raymarcher.
-
 **Steps**:
-1. Apply a **resolution scale factor** (e.g., `0.5` to `1.0`) that can be controlled by the user or auto-detected:
+1. ✅ Apply a **resolution scale factor** (e.g., `0.5` to `1.0`) that can be controlled by the user or auto-detected:
    ```ts
    const scale = window.devicePixelRatio > 1 ? 0.5 : 1.0;
    canvas.width = window.innerWidth * scale;
    canvas.height = window.innerHeight * scale;
    ```
-2. Use CSS to stretch the canvas back to fill the viewport: `canvas.style.width = '100%'; canvas.style.height = '100%';`
-3. Expose this as a "Quality" slider in the UI.
+2. ✅ Use CSS to stretch the canvas back to fill the viewport: `canvas.style.width = '100%'; canvas.style.height = '100%';`
+3. ✅ Expose this as a "Quality" slider in the UI.
 
 ---
 
-#### 10. `OES_texture_float_linear` Extension Queried Per Upload
+#### 10. `OES_texture_float_linear` Extension Queried Per Upload (DONE)
 **File**: `WebGLRenderer.ts:114`
 
 **Problem**: `gl.getExtension('OES_texture_float_linear')` is called every time `uploadSvgSdfTexture` runs. Extension queries are cheap but redundant.
 
 **Steps**:
-1. Query the extension once in the constructor and cache the result.
+1. Query the extension once in the constructor and cache the result. (Done)
 
 ---
 
-#### 11. Duplicate `requestAnimationFrame` Loop (FPSCounter)
+#### 11. Duplicate `requestAnimationFrame` Loop (FPSCounter) ✅
 **File**: `FPSCounter.tsx:9-24` · `useRenderer.ts:150`
 
 **Problem**: `FPSCounter` runs its own independent `requestAnimationFrame` loop just to count frames. This means two rAF callbacks are in flight every frame.
@@ -214,10 +217,10 @@ The renderer is a **fullscreen-quad raymarcher**. Every visible object triggers 
 | 🟡 P1 | Adaptive ray step count | High | Low |
 | 🟡 P1 | Eliminate per-frame object cloning | Medium | Low |
 | 🟡 P1 | Uniform Buffer Objects | Medium | Medium |
-| 🟡 P1 | Zustand subscription optimization | Medium | Low |
-| 🟢 P2 | JFA/Worker for SVG SDF | High (load time) | Medium |
-| 🟢 P2 | Resolution scaling / DPR handling | High (HiDPI) | Low |
-| 🟢 P2 | Cache `OES_texture_float_linear` | Trivial | Trivial |
+| 🟡 P1 | Zustand subscription optimization | Medium | Low | ✅ DONE |
+| 🟢 P2 | JFA/Worker for SVG SDF | High (load time) | DONE ✅ |
+| 🟢 P2 | Resolution scaling / DPR handling ✅ | High (HiDPI) | Low |
+| 🟢 P2 | Cache `OES_texture_float_linear` | Trivial | DONE |
 | 🟢 P2 | Consolidate rAF loops | Low | Low |
 | 🟢 P2 | Fix RendererView re-renders | Low | Low |
 | 🔵 P3 | Shader specialization per shape | Medium | High |

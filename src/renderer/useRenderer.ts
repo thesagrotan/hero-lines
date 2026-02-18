@@ -5,7 +5,7 @@ import { SvgSdfManager } from './SvgSdfManager';
 import { vsSource, fsSource } from '../shaders';
 import { TransitionSnapshot, RenderableObject, ShapeType } from '../types';
 import { interpolateTransition, createTransitionSnapshot } from '../utils/transitionUtils';
-import { buildRenderableObjects } from './renderUtils';
+import { updateRenderableObjects } from './renderUtils';
 
 export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     const rendererRef = useRef<WebGLRenderer | null>(null);
@@ -21,6 +21,8 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
     });
 
     const lastTransitionHandled = useRef<number>(0);
+    const renderedObjectsRef = useRef<RenderableObject[]>([]);
+
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -36,9 +38,39 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
             return;
         }
 
+        // Keep a local reference to the store state to avoid calling getState() every frame
+        let state = useSceneStore.getState();
+        let lastScale = state.scene.resolutionScale;
+
+        const resize = () => {
+            if (!canvas) return;
+            const currentScale = useSceneStore.getState().scene.resolutionScale;
+            canvas.width = window.innerWidth * currentScale;
+            canvas.height = window.innerHeight * currentScale;
+            rendererRef.current?.resize(canvas.width, canvas.height);
+        };
+
+        const unsubscribe = useSceneStore.subscribe((newState) => {
+            if (newState.scene.resolutionScale !== lastScale) {
+                lastScale = newState.scene.resolutionScale;
+                resize();
+            }
+            state = newState;
+        });
+
+        let frames = 0;
+        let lastTime = 0;
+
         const render = (now: number) => {
-            const state = useSceneStore.getState();
-            const { scene, objects, lastTransition, updateObject } = state;
+            const { scene, objects, lastTransition, updateObject, setFps } = state;
+
+            // Update FPS count
+            frames++;
+            if (now - lastTime >= 1000) {
+                setFps(Math.round((frames * 1000) / (now - lastTime)));
+                frames = 0;
+                lastTime = now;
+            }
 
             // Handle new transition trigger
             if (lastTransition && lastTransition.timestamp > lastTransitionHandled.current) {
@@ -55,8 +87,10 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
                 }
             }
 
-            // Build base renderable objects
-            const renderedObjects: RenderableObject[] = buildRenderableObjects(objects);
+            // Build base renderable objects (using persistent buffer to avoid allocations)
+            updateRenderableObjects(objects, renderedObjectsRef.current);
+            const renderedObjects = renderedObjectsRef.current;
+
 
             const renderedScene = {
                 ...scene,
@@ -150,22 +184,17 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
             requestRef.current = requestAnimationFrame(render);
         };
 
-        const resize = () => {
-            if (!canvas) return;
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            rendererRef.current?.resize(canvas.width, canvas.height);
-        };
-
         window.addEventListener('resize', resize);
         resize();
         requestRef.current = requestAnimationFrame(render);
 
         return () => {
+            unsubscribe();
             window.removeEventListener('resize', resize);
             if (requestRef.current) cancelAnimationFrame(requestRef.current);
             rendererRef.current?.dispose();
         };
+
     }, [canvasRef]);
 
     return rendererRef;
