@@ -4,13 +4,15 @@ export interface Vector3 {
     z: number;
 }
 
-export type ShapeType = 'Box' | 'Sphere' | 'Cone' | 'Torus' | 'Capsule' | 'Cylinder' | 'SVG';
+export type ShapeType = 'Box' | 'Sphere' | 'Cone' | 'Torus' | 'Capsule' | 'Cylinder' | 'SVG' | 'Laptop';
 
 export interface SvgData {
     svgString: string;
     extrusionDepth: number;
 }
 export type Orientation = 'Horizontal' | 'Vertical' | 'Depth' | 'Diagonal';
+
+export type CompositeMode = 'None' | 'Union' | 'Subtract' | 'Intersect' | 'SmoothUnion';
 
 export interface SceneObject {
     id: string;
@@ -52,6 +54,13 @@ export interface SceneObject {
     pulseIntensity: number;
     pulseSpeed: number;
     scanlineIntensity: number;
+    // CSG Properties
+    compositeMode: CompositeMode;
+    secondaryShapeType: ShapeType;
+    secondaryPosition: Vector3;
+    secondaryRotation: Vector3;
+    secondaryDimensions: Vector3;
+    compositeSmoothness: number;
 }
 
 export interface SceneState {

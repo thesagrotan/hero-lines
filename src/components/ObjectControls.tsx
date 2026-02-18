@@ -15,7 +15,7 @@ export const ObjectControls = () => {
             'Shape': folder({
                 shapeType: {
                     value: 'Box',
-                    options: ['Box', 'Sphere', 'Cone', 'Torus', 'Capsule', 'Cylinder', 'SVG'],
+                    options: ['Box', 'Sphere', 'Cone', 'Torus', 'Capsule', 'Cylinder', 'SVG', 'Laptop'],
                     onChange: objectOnChange('shapeType', updateObject),
                 },
                 borderRadius: {
@@ -198,6 +198,48 @@ export const ObjectControls = () => {
                     onChange: objectOnChange('scanlineIntensity', updateObject),
                 },
             }, { collapsed: true }),
+
+            'Composite': folder({
+                compositeMode: {
+                    value: 'None',
+                    options: ['None', 'Union', 'Subtract', 'Intersect', 'SmoothUnion'],
+                    label: 'Mode',
+                    onChange: objectOnChange('compositeMode', updateObject),
+                },
+                secondaryShapeType: {
+                    value: 'Sphere',
+                    options: ['Box', 'Sphere', 'Cone', 'Torus', 'Capsule', 'Cylinder', 'SVG', 'Laptop'],
+                    label: 'Secondary Shape',
+                    onChange: objectOnChange('secondaryShapeType', updateObject),
+                },
+                secondaryPosition: {
+                    value: { x: 0, y: 0, z: 0 },
+                    step: 0.05,
+                    label: 'Secondary Pos',
+                    render: (get) => get('Composite.compositeMode') !== 'None',
+                    onChange: objectOnChangeVec3('secondaryPosition', updateObject),
+                },
+                secondaryRotation: {
+                    value: { x: 0, y: 0, z: 0 },
+                    step: 1,
+                    label: 'Secondary Rot',
+                    render: (get) => get('Composite.compositeMode') !== 'None',
+                    onChange: objectOnChangeVec3('secondaryRotation', updateObject),
+                },
+                secondaryDimensions: {
+                    value: { x: 0.5, y: 0.5, z: 0.5 },
+                    step: 0.05,
+                    label: 'Secondary Size',
+                    render: (get) => get('Composite.compositeMode') !== 'None',
+                    onChange: objectOnChangeVec3('secondaryDimensions', updateObject),
+                },
+                compositeSmoothness: {
+                    value: 0.1, min: 0.01, max: 1, step: 0.01,
+                    label: 'Smoothness',
+                    render: (get) => get('Composite.compositeMode') === 'SmoothUnion',
+                    onChange: objectOnChange('compositeSmoothness', updateObject),
+                },
+            }, { collapsed: true }),
         }),
         []
     );
@@ -205,7 +247,7 @@ export const ObjectControls = () => {
     // Sync store changes back to Leva
     useEffect(() => {
         if (!obj) return;
-        set({
+        (set as any)({
             position: obj.position,
             dimensions: obj.dimensions,
             rotation: obj.rotation,
@@ -241,6 +283,12 @@ export const ObjectControls = () => {
             pulseIntensity: obj.pulseIntensity,
             pulseSpeed: obj.pulseSpeed,
             scanlineIntensity: obj.scanlineIntensity,
+            compositeMode: obj.compositeMode,
+            secondaryShapeType: obj.secondaryShapeType,
+            secondaryPosition: obj.secondaryPosition,
+            secondaryRotation: obj.secondaryRotation,
+            secondaryDimensions: obj.secondaryDimensions,
+            compositeSmoothness: obj.compositeSmoothness,
         });
     }, [obj, set]);
 

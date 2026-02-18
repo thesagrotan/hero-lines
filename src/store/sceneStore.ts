@@ -88,6 +88,13 @@ const INITIAL_OBJECT: SceneObject = {
     pulseIntensity: 0,
     pulseSpeed: 1,
     scanlineIntensity: 0,
+    // CSG Properties
+    compositeMode: 'None',
+    secondaryShapeType: 'Sphere',
+    secondaryPosition: { x: 0, y: 0, z: 0 },
+    secondaryRotation: { x: 0, y: 0, z: 0 },
+    secondaryDimensions: { x: 0.5, y: 0.5, z: 0.5 },
+    compositeSmoothness: 0.1,
 };
 
 export const useSceneStore = create<SceneStore>((set, get) => ({
@@ -332,6 +339,12 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
                 layerDelay: baseStyle.layerDelay,
                 torusThickness: baseStyle.torusThickness,
                 lineBrightness: baseStyle.lineBrightness,
+                compositeMode: 'None',
+                secondaryShapeType: 'Sphere',
+                secondaryPosition: { x: 0, y: 0, z: 0 },
+                secondaryRotation: { x: 0, y: 0, z: 0 },
+                secondaryDimensions: { x: 0.5, y: 0.5, z: 0.5 },
+                compositeSmoothness: 0.1,
             };
         });
 

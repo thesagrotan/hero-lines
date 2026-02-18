@@ -13,13 +13,16 @@ export class WebGLRenderer {
     private svgSdfResolution: number = 0;
 
     private static readonly SHAPE_MAP: Record<string, number> = {
-        Box: 0, Sphere: 1, Cone: 2, Torus: 3, Capsule: 4, Cylinder: 5, SVG: 6
+        Box: 0, Sphere: 1, Cone: 2, Torus: 3, Capsule: 4, Cylinder: 5, SVG: 6, Laptop: 7
     };
     private static readonly ORIENT_MAP: Record<string, number> = {
         Horizontal: 0, Vertical: 1, Depth: 2, Diagonal: 3
     };
     private static readonly BEND_AXIS_MAP: Record<string, number> = {
         X: 0, Y: 1, Z: 2
+    };
+    private static readonly COMPOSITE_MAP: Record<string, number> = {
+        None: 0, Union: 1, Subtract: 2, Intersect: 3, SmoothUnion: 4
     };
 
     constructor(canvas: HTMLCanvasElement, vsSource: string, fsSource: string) {
@@ -51,7 +54,8 @@ export class WebGLRenderer {
             'u_bendOffset', 'u_bendLimit', 'u_rimIntensity', 'u_wireOpacity',
             'u_rimPower', 'u_layerDelay', 'u_wireIntensity', 'u_torusThickness', 'u_lineBrightness',
             'u_wobbleAmount', 'u_wobbleSpeed', 'u_wobbleScale', 'u_chromaticAberration',
-            'u_pulseIntensity', 'u_pulseSpeed', 'u_scanlineIntensity'
+            'u_pulseIntensity', 'u_pulseSpeed', 'u_scanlineIntensity',
+            'u_compositeMode', 'u_secondaryShapeType', 'u_secondaryPosition', 'u_secondaryRotation', 'u_secondaryDimensions', 'u_compositeSmoothness'
         ];
 
         uniformNames.forEach(name => {
@@ -180,6 +184,17 @@ export class WebGLRenderer {
             gl.uniform1i(this.uniforms['u_shapeTypeNext'], WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0);
             gl.uniform1f(this.uniforms['u_morphFactor'], obj.morphFactor);
             gl.uniform1i(this.uniforms['u_orientation'], WebGLRenderer.ORIENT_MAP[obj.orientation] ?? 0);
+            gl.uniform1i(this.uniforms['u_compositeMode'], WebGLRenderer.COMPOSITE_MAP[obj.compositeMode] ?? 0);
+            gl.uniform1i(this.uniforms['u_secondaryShapeType'], WebGLRenderer.SHAPE_MAP[obj.secondaryShapeType] ?? 1);
+            gl.uniform3f(this.uniforms['u_secondaryPosition'], obj.secondaryPosition.x, obj.secondaryPosition.y, obj.secondaryPosition.z);
+            gl.uniform3f(
+                this.uniforms['u_secondaryRotation'],
+                obj.secondaryRotation.x * DEG_TO_RAD,
+                obj.secondaryRotation.y * DEG_TO_RAD,
+                obj.secondaryRotation.z * DEG_TO_RAD
+            );
+            gl.uniform3f(this.uniforms['u_secondaryDimensions'], obj.secondaryDimensions.x, obj.secondaryDimensions.y, obj.secondaryDimensions.z);
+            gl.uniform1f(this.uniforms['u_compositeSmoothness'], obj.compositeSmoothness ?? 0.1);
 
             // SVG SDF texture binding
             const needsSvg = obj.shapeType === 'SVG' || obj.shapeTypeNext === 'SVG';

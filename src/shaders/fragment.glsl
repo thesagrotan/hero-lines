@@ -46,9 +46,20 @@ uniform float u_chromaticAberration;
 uniform float u_pulseIntensity;
 uniform float u_pulseSpeed;
 uniform float u_scanlineIntensity;
+uniform int u_compositeMode;
+uniform int u_secondaryShapeType;
+uniform vec3 u_secondaryPosition;
+uniform vec3 u_secondaryRotation;
+uniform vec3 u_secondaryDimensions;
+uniform float u_compositeSmoothness;
 
 float hash(float n) {
     return fract(sin(n) * 43758.5453123);
+}
+
+float smin(float a, float b, float k) {
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
 }
 
 float noise(vec3 x) {
@@ -61,6 +72,10 @@ float noise(vec3 x) {
                mix(mix(hash(n+113.0), hash(n+114.0),f.x),
                    mix(hash(n+170.0), hash(n+171.0),f.x),f.y),f.z);
 }
+ 
+mat3 rotX(float a) { float s=sin(a), c=cos(a); return mat3(1,0,0, 0,c,-s, 0,s,c); }
+mat3 rotY(float a) { float s=sin(a), c=cos(a); return mat3(c,0,s, 0,1,0, -s,0,c); }
+mat3 rotZ(float a) { float s=sin(a), c=cos(a); return mat3(c,-s,0, s,c,0, 0,0,1); }
 
 float sdSphere(vec3 p, float r) {
     return length(p) - r;
@@ -110,6 +125,28 @@ float sdCylinder(vec3 p, vec3 h, int orient) {
 float sdRoundBox(vec3 p, vec3 b, float r) {
     vec3 q = abs(p) - b;
     return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
+}
+
+float sdLaptop(vec3 p, vec3 b, float r) {
+    // Base part
+    vec3 baseSize = vec3(b.x, b.y * 0.1, b.z);
+    vec3 basePos = p - vec3(0.0, -b.y * 0.9, 0.0);
+    float base = sdRoundBox(basePos, baseSize, r);
+    
+    // Screen part
+    vec3 screenSize = vec3(b.x, b.y * 0.9, b.y * 0.05);
+    // Move screen origin to hinge
+    vec3 pScreen = p - vec3(0.0, -b.y * 0.8, -b.z + b.y * 0.05);
+    // Rotate screen around X axis (hinge)
+    float angle = -1.1; // ~63 degrees
+    float s = sin(angle), c = cos(angle);
+    pScreen.yz = mat2(c, -s, s, c) * pScreen.yz;
+    // Move screen up from hinge
+    pScreen.y -= b.y * 0.9;
+    
+    float screen = sdRoundBox(pScreen, screenSize, r);
+    
+    return min(base, screen);
 }
 
 vec3 opBend(in vec3 p, in float k, in float angle, in int axis, in float offset, in float limit) {
@@ -204,6 +241,7 @@ float getShapeDist(vec3 p, vec3 boxSize, float radius, int shapeType) {
     if (shapeType == 4) return sdCapsule(p, innerSize, u_orientation) - radius;
     if (shapeType == 5) return sdCylinder(p, innerSize, u_orientation) - radius;
     if (shapeType == 6 && u_hasSvgSdf == 1) return sdSvgExtrude(p, boxSize, u_orientation);
+    if (shapeType == 7) return sdLaptop(p, innerSize, radius);
     
     return sdRoundBox(p, innerSize, radius);
 }
@@ -217,13 +255,32 @@ float map(vec3 p, vec3 boxSize, float radius) {
     float pulse = 1.0 + sin(u_time * u_pulseSpeed) * u_pulseIntensity;
     vec3 pScaled = pBent / pulse;
     
-    float d1 = getShapeDist(pScaled, boxSize, radius, u_shapeType);
-    float d;
+    float d1;
     if (u_morphFactor <= 0.0) {
+        d1 = getShapeDist(pScaled, boxSize, radius, u_shapeType);
+    } else {
+        float da = getShapeDist(pScaled, boxSize, radius, u_shapeType);
+        float db = getShapeDist(pScaled, boxSize, radius, u_shapeTypeNext);
+        d1 = mix(da, db, u_morphFactor);
+    }
+    
+    float d;
+    if (u_compositeMode == 0) {
         d = d1;
     } else {
-        float d2 = getShapeDist(pScaled, boxSize, radius, u_shapeTypeNext);
-        d = mix(d1, d2, u_morphFactor);
+        // Evaluate secondary shape
+        // 1. Move
+        vec3 pSecondary = pScaled - u_secondaryPosition;
+        // 2. Rotate
+        pSecondary *= rotZ(u_secondaryRotation.z) * rotY(u_secondaryRotation.y) * rotX(u_secondaryRotation.x);
+        
+        float d2 = getShapeDist(pSecondary, u_secondaryDimensions, radius, u_secondaryShapeType);
+        
+        if (u_compositeMode == 1) d = min(d1, d2); // Union
+        else if (u_compositeMode == 2) d = max(d1, -d2); // Subtract
+        else if (u_compositeMode == 3) d = max(d1, d2); // Intersect
+        else if (u_compositeMode == 4) d = smin(d1, d2, u_compositeSmoothness); // Smooth Union
+        else d = d1;
     }
     
     // Apply scale compensation for distance field
@@ -244,9 +301,6 @@ vec3 calcNormal(vec3 p, vec3 boxSize, float radius) {
     return normalize(k.xyy * map(p + k.xyy * h, boxSize, radius) + k.yyx * map(p + k.yyx * h, boxSize, radius) + k.yxy * map(p + k.yxy * h, boxSize, radius) + k.xxx * map(p + k.xxx * h, boxSize, radius));
 }
 
-mat3 rotX(float a) { float s=sin(a), c=cos(a); return mat3(1,0,0, 0,c,-s, 0,s,c); }
-mat3 rotY(float a) { float s=sin(a), c=cos(a); return mat3(c,0,s, 0,1,0, -s,0,c); }
-mat3 rotZ(float a) { float s=sin(a), c=cos(a); return mat3(c,-s,0, s,c,0, 0,0,1); }
 
 vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
     vec3 m = 1.0 / rd, n = m * ro, k = abs(m) * (boxSize * 1.5); // Wider box to account for effects
