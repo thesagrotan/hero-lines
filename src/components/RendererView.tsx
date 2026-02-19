@@ -118,7 +118,7 @@ export const RendererView: React.FC = () => {
         const wheel = (e: WheelEvent) => {
             const state = useSceneStore.getState();
             e.preventDefault();
-            setScene({ zoom: Math.max(0.1, Math.min(2.0, state.scene.zoom - e.deltaY * 0.001)) });
+            setScene({ zoom: Math.max(0.1, Math.min(20.0, state.scene.zoom - e.deltaY * 0.001)) });
         };
 
         canvas.addEventListener('wheel', wheel, { passive: false });

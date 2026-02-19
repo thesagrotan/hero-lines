@@ -24,7 +24,7 @@ layout(std140) uniform ObjectData {
     vec3 u_color2;   float _p5;
     vec3 u_rimColor; float _p6;
     vec3 u_secondaryPosition; float _p7;
-    vec3 u_secondaryRotation; float _p8;
+    mat4 u_secondaryRotMat;
     vec3 u_secondaryDimensions; float _p9;
     
     float u_borderRadius;
@@ -231,7 +231,7 @@ float mapBody(vec3 pBent, vec3 boxSize, float radius, mat3 secRotMat) {
     if (u_compositeMode == 0) return d1;
 
     // CSG with secondary shape
-    vec3 pSec = (pBent - u_secondaryPosition) * secRotMat;
+    vec3 pSec = (pBent - u_secondaryPosition) * mat3(u_secondaryRotMat);
     
     vec3 secInnerSize = max(u_secondaryDimensions - vec3(radius), vec3(0.0001));
     float d2_box = sdRoundBox(pSec, secInnerSize, radius);
@@ -252,19 +252,19 @@ float mapBody(vec3 pBent, vec3 boxSize, float radius, mat3 secRotMat) {
     return d1;
 }
 
-float map(vec3 p, vec3 boxSize, float radius, vec2 bendSC, float invK, mat3 secRotMat) {
+float map(vec3 p, vec3 boxSize, float radius, vec2 bendSC, float invK) {
     // Task 10: Skip opBend function call if bend is negligible
     vec3 pBent = (abs(u_bendAmount) < 0.001) ? p : opBend(p, u_bendAmount, bendSC, u_bendAxis, u_bendOffset, u_bendLimit, invK);
-    return mapBody(pBent, boxSize, radius, secRotMat);
+    return mapBody(pBent, boxSize, radius, mat3(0.0)); // Note: mapBody doesn't actually need secRotMat anymore for map if it uses u_secondaryRotMat
 }
 
-vec3 calcNormalBent(vec3 pBent, vec3 boxSize, float radius, float hitD, mat3 secRotMat) {
+vec3 calcNormalBent(vec3 pBent, vec3 boxSize, float radius, float hitD) {
     const float h = 0.0001;
     // 3-tap forward difference (reuses current distance 'hitD')
     return normalize(vec3(
-        mapBody(pBent + vec3(h, 0, 0), boxSize, radius, secRotMat) - hitD,
-        mapBody(pBent + vec3(0, h, 0), boxSize, radius, secRotMat) - hitD,
-        mapBody(pBent + vec3(0, 0, h), boxSize, radius, secRotMat) - hitD
+        mapBody(pBent + vec3(h, 0, 0), boxSize, radius, mat3(0.0)) - hitD,
+        mapBody(pBent + vec3(0, h, 0), boxSize, radius, mat3(0.0)) - hitD,
+        mapBody(pBent + vec3(0, 0, h), boxSize, radius, mat3(0.0)) - hitD
     ));
 }
 
@@ -285,6 +285,35 @@ vec3 analyticalNormalRoundBox(vec3 p, vec3 b) {
     if (q.x > q.y && q.x > q.z) return vec3(s.x, 0, 0);
     if (q.y > q.z) return vec3(0, s.y, 0);
     return vec3(0, 0, s.z);
+}
+
+vec3 analyticalNormalCylinder(vec3 p, vec3 h, int orient) {
+    vec3 p_o = (orient == 1) ? p.yxz : (orient == 2) ? p.zyx : p.xyz;
+    vec3 h_o = (orient == 1) ? h.yxz : (orient == 2) ? h.zyx : h.xyz;
+    
+    vec2 d = abs(vec2(length(p_o.yz / h_o.yz), p_o.x / h_o.x)) - 1.0;
+    
+    vec3 n;
+    if (d.x > d.y) {
+        n = vec3(0.0, normalize(p_o.yz));
+    } else {
+        n = vec3(sign(p_o.x), 0.0, 0.0);
+    }
+    
+    // Reorient normal back
+    return (orient == 1) ? n.yxz : (orient == 2) ? n.zyx : n.xyz;
+}
+
+vec3 analyticalNormalCapsule(vec3 p, vec3 h, int orient) {
+    vec3 p_o = (orient == 1) ? p.yxz : (orient == 2) ? p.zyx : p.xyz;
+    vec3 h_o = (orient == 1) ? h.yxz : (orient == 2) ? h.zyx : h.xyz;
+    float r = min(h_o.y, h_o.z);
+    float hh = max(0.0, h_o.x - r);
+    vec3 pa = p_o - vec3(-hh, 0, 0);
+    vec3 ba = vec3(2.0 * hh, 0, 0);
+    float h_c = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    vec3 n = normalize(pa - ba * h_c);
+    return (orient == 1) ? n.yxz : (orient == 2) ? n.zyx : n.xyz;
 }
 
 
@@ -380,7 +409,7 @@ vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
 }
 
 #ifndef MAX_STEPS
-#define MAX_STEPS 64
+#define MAX_STEPS 48
 #endif
 
 #ifndef MIN_STEPS
@@ -388,14 +417,14 @@ vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
 #endif
 
 #ifndef MAX_BACK_STEPS
-#define MAX_BACK_STEPS 32
+#define MAX_BACK_STEPS 24
 #endif
 
 #ifndef HIT_EPS
 #define HIT_EPS 0.003
 #endif
 
-vec4 render(vec3 ro_l, vec3 rd, vec2 bendSC, float invK, mat3 secRotMat, OrientInfo oi) {
+vec4 render(vec3 ro_l, vec3 rd, vec2 bendSC, float invK, OrientInfo oi) {
     // Tier 3 Optimization: Ray-Sphere Early-Out
     float tSphere = intersectSphere(ro_l, rd, u_boundingRadius);
     if (tSphere < 0.0 && length(ro_l) > u_boundingRadius) return vec4(0.0);
@@ -425,7 +454,7 @@ vec4 render(vec3 ro_l, vec3 rd, vec2 bendSC, float invK, mat3 secRotMat, OrientI
             if (u_compositeMode == 0 && u_morphFactor <= 0.0 && i >= MIN_STEPS) break;
 
             p = ro_l + rd * t; 
-            float d = map(p, u_boxSize, u_borderRadius, bendSC, invK, secRotMat); 
+            float d = map(p, u_boxSize, u_borderRadius, bendSC, invK); 
             
             float adaptiveEps = HIT_EPS * (1.0 + t * 0.05);
             if(d < adaptiveEps) { hit = true; finalD = d; break; } 
@@ -446,9 +475,11 @@ vec4 render(vec3 ro_l, vec3 rd, vec2 bendSC, float invK, mat3 secRotMat, OrientI
                 vec3 innerSize = max(u_boxSize - vec3(u_borderRadius), vec3(0.0001));
                 if (u_shapeType == 1) n = analyticalNormalSphere(pBent);
                 else if (u_shapeType == 0) n = analyticalNormalRoundBox(pBent, innerSize);
-                else n = calcNormalBent(pBent, u_boxSize, u_borderRadius, finalD, secRotMat);
+                else if (u_shapeType == 5) n = analyticalNormalCylinder(pBent, innerSize, u_orientation);
+                else if (u_shapeType == 4) n = analyticalNormalCapsule(pBent, innerSize, u_orientation);
+                else n = calcNormalBent(pBent, u_boxSize, u_borderRadius, finalD);
             } else {
-                n = calcNormalBent(pBent, u_boxSize, u_borderRadius, finalD, secRotMat);
+                n = calcNormalBent(pBent, u_boxSize, u_borderRadius, finalD);
             }
 
             
@@ -470,7 +501,7 @@ vec4 render(vec3 ro_l, vec3 rd, vec2 bendSC, float invK, mat3 secRotMat, OrientI
                     if (u_compositeMode == 0 && i >= MIN_STEPS) break;
                     
                     p = ro_b + rd_b * tb; 
-                    float d = map(p, u_boxSize, u_borderRadius, bendSC, invK, secRotMat); 
+                    float d = map(p, u_boxSize, u_borderRadius, bendSC, invK); 
                     
                     float adaptiveEps = HIT_EPS * (1.0 + tb * 0.05);
                     if(d < adaptiveEps) { hit = true; finalDb = d; break; } 
@@ -488,7 +519,7 @@ vec4 render(vec3 ro_l, vec3 rd, vec2 bendSC, float invK, mat3 secRotMat, OrientI
                     #ifdef SIMPLE_BACKFACE_NORMALS
                     vec3 nB = -rd;
                     #else
-                    vec3 nB = calcNormalBent(pBentB, u_boxSize, u_borderRadius, finalDb, secRotMat);
+                    vec3 nB = calcNormalBent(pBentB, u_boxSize, u_borderRadius, finalDb);
                     #endif
 
                     
@@ -522,10 +553,9 @@ void main() {
     float a = u_bendAngle * 0.01745329;
     vec2 bendSC = vec2(sin(a), cos(a));
     float invK = 1.0 / max(u_bendAmount, 0.0001);
-    mat3 secRotMat = rotZ(u_secondaryRotation.z) * rotY(u_secondaryRotation.y) * rotX(u_secondaryRotation.x);
     OrientInfo oi = buildOrientInfo(u_boxSize);
     
-    vec4 res = render(ro_l, rd, bendSC, invK, secRotMat, oi);
+    vec4 res = render(ro_l, rd, bendSC, invK, oi);
     
     fragColor = vec4(res.rgb, res.a);
 }

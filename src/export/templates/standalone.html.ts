@@ -44,7 +44,7 @@ const VS_SOURCE = ${JSON.stringify(vsSource)};
 const FS_SOURCE = ${JSON.stringify(fsSource.replace('#version 300 es', `#version 300 es
 #define MAX_STEPS 48
 #define MIN_STEPS 16
-#define MAX_BACK_STEPS 32
+#define MAX_BACK_STEPS 24
 #define HIT_EPS 0.003
 #define SIMPLE_BACKFACE_NORMALS`))};
 

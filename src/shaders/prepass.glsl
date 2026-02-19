@@ -26,7 +26,7 @@ layout(std140) uniform ObjectData {
     vec3 u_color2;   float _p5;
     vec3 u_rimColor; float _p6;
     vec3 u_secondaryPosition; float _p7;
-    vec3 u_secondaryRotation; float _p8;
+    mat4 u_secondaryRotMat;
     vec3 u_secondaryDimensions; float _p9;
     
     float u_borderRadius;
@@ -207,7 +207,7 @@ float getShapeDist(vec3 p, vec3 boxSize, float radius, int shapeType) {
     }
 }
 
-float mapBody(vec3 pBent, vec3 boxSize, float radius, mat3 secRotMat) {
+float mapBody(vec3 pBent, vec3 boxSize, float radius) {
     if (u_morphFactor <= 0.0 && u_compositeMode == 0) {
         return getShapeDist(pBent, boxSize, radius, u_shapeType);
     }
@@ -220,7 +220,7 @@ float mapBody(vec3 pBent, vec3 boxSize, float radius, mat3 secRotMat) {
         d1 = mix(da, db, u_morphFactor);
     }
     if (u_compositeMode == 0) return d1;
-    vec3 pSecondary = (pBent - u_secondaryPosition) * secRotMat;
+    vec3 pSecondary = (pBent - u_secondaryPosition) * mat3(u_secondaryRotMat);
     float d2 = getShapeDist(pSecondary, u_secondaryDimensions, radius, u_secondaryShapeType);
     if (u_compositeMode == 1) return min(d1, d2);
     if (u_compositeMode == 2) return max(d1, -d2);
@@ -229,11 +229,9 @@ float mapBody(vec3 pBent, vec3 boxSize, float radius, mat3 secRotMat) {
     return d1;
 }
 
-
-
-float map(vec3 p, vec3 boxSize, float radius, vec2 bendSC, float invK, mat3 secRotMat) {
+float map(vec3 p, vec3 boxSize, float radius, vec2 bendSC, float invK) {
     vec3 pBent = (abs(u_bendAmount) < 0.001) ? p : opBend(p, u_bendAmount, bendSC, u_bendAxis, u_bendOffset, u_bendLimit, invK);
-    return mapBody(pBent, boxSize, radius, secRotMat);
+    return mapBody(pBent, boxSize, radius);
 }
 
 float intersectSphere(vec3 ro, vec3 rd, float r) {
@@ -317,14 +315,13 @@ void main() {
         float a = u_bendAngle * 0.01745329;
         vec2 bendSC = vec2(sin(a), cos(a));
         float invK = 1.0 / max(u_bendAmount, 0.0001);
-        mat3 secRotMat = rotZ(u_secondaryRotation.z) * rotY(u_secondaryRotation.y) * rotX(u_secondaryRotation.x);
-
+        
         // Pre-pass uses lower steps and higher epsilon
         const int PRE_STEPS = 20; 
         const float PRE_EPS = 0.02;
         for(int i=0; i<PRE_STEPS; i++) {
             vec3 p = ro_l + rd * t;
-            float d = map(p, u_boxSize, u_borderRadius, bendSC, invK, secRotMat);
+            float d = map(p, u_boxSize, u_borderRadius, bendSC, invK);
             if(d < PRE_EPS) { resT = t; break; }
             t += d * 1.5; // Aggressive stepping for pre-pass
             if(t > tBox.y) break;

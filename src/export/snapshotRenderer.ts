@@ -308,53 +308,76 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
             objectData[25] = obj._spy;
             objectData[26] = obj._spz;
 
-            objectData[28] = obj._srx;
-            objectData[29] = obj._sry;
-            objectData[30] = obj._srz;
+            // Compute secondary rotation matrix on CPU
+            const sx = Math.sin(obj._srx), cx = Math.cos(obj._srx);
+            const sy = Math.sin(obj._sry), cy = Math.cos(obj._sry);
+            const sz = Math.sin(obj._srz), cz = Math.cos(obj._srz);
+            const secRot = mul3(mul3([cz,-sz,0, sz,cz,0, 0,0,1], [cy,0,sy, 0,1,0, -sy,0,cy]), [1,0,0, 0,cx,-sx, 0,sx,cx]);
 
-            objectData[32] = obj._sdx;
-            objectData[33] = obj._sdy;
-            objectData[34] = obj._sdz;
+            // Column 0
+            objectData[28] = secRot[0];
+            objectData[29] = secRot[1];
+            objectData[30] = secRot[2];
+            objectData[31] = 0;
+            // Column 1
+            objectData[32] = secRot[3];
+            objectData[33] = secRot[4];
+            objectData[34] = secRot[5];
+            objectData[35] = 0;
+            // Column 2
+            objectData[36] = secRot[6];
+            objectData[37] = secRot[7];
+            objectData[38] = secRot[8];
+            objectData[39] = 0;
+            // Column 3
+            objectData[40] = 0;
+            objectData[41] = 0;
+            objectData[42] = 0;
+            objectData[43] = 1;
 
-            objectData[36] = obj.borderRadius;
-            objectData[37] = obj.thickness;
-            objectData[38] = obj.speed;
-            objectData[39] = obj.longevity;
+            objectData[44] = obj._sdx;
+            objectData[45] = obj._sdy;
+            objectData[46] = obj._sdz;
 
-            objectData[40] = obj.ease;
-            objectData[41] = obj.numLines;
-            objectData[42] = 0; // morphFactor
-            // objectData[43] = obj.timeNoise; // Removed
-            objectData[43] = obj.svgExtrusionDepth;
-            objectData[44] = 32; // SDF_SPREAD
-            objectData[45] = svgSdfResolution;
-            objectData[46] = obj.bendAmount;
+            // Floats (starting at index 48)
+            objectData[48] = obj.borderRadius;
+            objectData[49] = obj.thickness;
+            objectData[50] = obj.speed;
+            objectData[51] = obj.longevity;
 
-            objectData[47] = obj.bendAngle;
-            objectData[48] = obj.bendOffset;
-            objectData[49] = obj.bendLimit;
-            objectData[50] = obj.rimIntensity;
+            objectData[52] = obj.ease;
+            objectData[53] = obj.numLines;
+            objectData[54] = 0; // morphFactor
+            objectData[55] = obj.svgExtrusionDepth;
+            objectData[56] = 32; // SDF_SPREAD
+            objectData[57] = svgSdfResolution;
+            objectData[58] = obj.bendAmount;
 
-            objectData[51] = obj.rimPower;
-            objectData[52] = obj.wireOpacity;
-            objectData[53] = obj.wireIntensity;
-            objectData[54] = obj.layerDelay;
+            objectData[59] = obj.bendAngle;
+            objectData[60] = obj.bendOffset;
+            objectData[61] = obj.bendLimit;
+            objectData[62] = obj.rimIntensity;
 
-            objectData[55] = obj.torusThickness;
-            objectData[56] = obj.lineBrightness;
-            objectData[57] = obj.compositeSmoothness;
+            objectData[63] = obj.rimPower;
+            objectData[64] = obj.wireOpacity;
+            objectData[65] = obj.wireIntensity;
+            objectData[66] = obj.layerDelay;
+
+            objectData[67] = obj.torusThickness;
+            objectData[68] = obj.lineBrightness;
+            objectData[69] = obj.compositeSmoothness;
 
             // Pre-resolved integer enums
-            objectDataInt[58] = obj._shapeType; // Was 59
-            objectDataInt[59] = obj._shapeType; // shapeTypeNext // Was 60
-            objectDataInt[60] = obj._orientType; // Was 61
+            objectDataInt[70] = obj._shapeType; 
+            objectDataInt[71] = obj._shapeType; // shapeTypeNext
+            objectDataInt[72] = obj._orientType; 
 
             const needsSvg = obj.shapeType === 'SVG';
-            objectDataInt[61] = (needsSvg && svgSdfReady && svgSdfTexture) ? 1 : 0; // Was 62
-            objectDataInt[62] = obj._bendAxis; // Was 63
-            objectDataInt[63] = obj._compositeMode; // Was 64
-            objectDataInt[64] = obj._secondaryShapeType; // Was 65
-            objectDataInt[65] = obj.enableBackface ? 1 : 0; // Was 66
+            objectDataInt[73] = (needsSvg && svgSdfReady && svgSdfTexture) ? 1 : 0; 
+            objectDataInt[74] = obj._bendAxis; 
+            objectDataInt[75] = obj._compositeMode; 
+            objectDataInt[76] = obj._secondaryShapeType; 
+            objectDataInt[77] = obj.enableBackface ? 1 : 0; 
 
             // Adaptive Step Count (P2 Optimization)
             const camPos = [sceneData[4], sceneData[5], sceneData[6]];
@@ -365,21 +388,21 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
                 (camPos[2] - objPos[2])**2
             );
             
-            const baseSteps = 64; // match #define in standalone.html.ts
-            const baseBackSteps = 32;
+            const baseSteps = 48; // match #define in standalone.html.ts
+            const baseBackSteps = 24;
             const minSteps = 16;
             
             const complexity = (obj.compositeMode !== 'None' || obj.morphFactor > 0.01) ? 1.5 : 1.0;
-            const morphPenalty = (obj.morphFactor > 0.01) ? 0.65 : 1.0; // P2-4: Morph doubles SDF cost, reduce steps
+            const morphPenalty = (obj.morphFactor > 0.01) ? 0.65 : 1.0; 
             const maxSteps = Math.max(minSteps, Math.floor(baseSteps * morphPenalty / (1.0 + Math.max(0, dist - 10.0) * 0.05 * complexity)));
             const maxBackSteps = Math.max(minSteps, Math.floor(baseBackSteps * morphPenalty / (1.0 + Math.max(0, dist - 10.0) * 0.05 * complexity)));
 
-            objectDataInt[84] = maxSteps;
-            objectDataInt[85] = maxBackSteps;
+            objectDataInt[96] = maxSteps;
+            objectDataInt[97] = maxBackSteps;
 
             // Task 7 & 13: Adaptive margin and combined bounds
             const margin = (Math.abs(obj.bendAmount) < 0.05 && (obj.compositeMode === 'None' || obj._compositeMode === 0)) ? 1.2 : 2.0;
-            objectData[66] = margin; // Was 67
+            objectData[78] = margin;
 
             let rbX = obj.dimensions.x, rbY = obj.dimensions.y, rbZ = obj.dimensions.z;
             if (obj._compositeMode !== 0) {
@@ -409,14 +432,14 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
                     rbZ = Math.max(rbZ, Math.abs(p[2]));
                 }
             }
-            objectData[68] = rbX;
-            objectData[69] = rbY;
-            objectData[70] = rbZ;
+            objectData[80] = rbX;
+            objectData[81] = rbY;
+            objectData[82] = rbZ;
 
             // Bounding Volume Early-Out (Tier 3 Optimization)
             const bendFactor = 1.0 + Math.abs(obj.bendAmount) * 2.5;
             const diagonal = Math.sqrt(rbX * rbX + rbY * rbY + rbZ * rbZ) + obj.borderRadius;
-            objectData[71] = diagonal * margin * bendFactor * 1.5;
+            objectData[83] = diagonal * margin * bendFactor * 1.5;
 
             if (objectUbo) {
                 gl.bindBuffer(gl.UNIFORM_BUFFER, objectUbo);

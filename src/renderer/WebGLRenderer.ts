@@ -138,10 +138,10 @@ export class WebGLRenderer {
         let finalSource = source;
         if (type === this.gl.FRAGMENT_SHADER) {
             finalSource = source.replace('#version 300 es', `#version 300 es
-#define MAX_STEPS 40
+#define MAX_STEPS 48
 #define MIN_STEPS 16
-#define MAX_BACK_STEPS 16
-#define HIT_EPS 0.008
+#define MAX_BACK_STEPS 24
+#define HIT_EPS 0.003
 #define CHEAP_NORMALS
 #define SIMPLE_BACKFACE_NORMALS`);
         }
@@ -335,66 +335,91 @@ export class WebGLRenderer {
         this.objectData[21] = rc[1];
         this.objectData[22] = rc[2];
 
-        this.objectData[24] = obj.secondaryPosition.x;
-        this.objectData[25] = obj.secondaryPosition.y;
-        this.objectData[26] = obj.secondaryPosition.z;
+        const sp = obj.secondaryPosition || { x: 0, y: 0, z: 0 };
+        const sr = obj.secondaryRotation || { x: 0, y: 0, z: 0 };
+        const sd = obj.secondaryDimensions || { x: 1, y: 1, z: 1 };
 
-        this.objectData[28] = obj.secondaryRotation.x * DEG_TO_RAD;
-        this.objectData[29] = obj.secondaryRotation.y * DEG_TO_RAD;
-        this.objectData[30] = obj.secondaryRotation.z * DEG_TO_RAD;
+        this.objectData[24] = sp.x;
+        this.objectData[25] = sp.y;
+        this.objectData[26] = sp.z;
 
-        this.objectData[32] = obj.secondaryDimensions.x;
-        this.objectData[33] = obj.secondaryDimensions.y;
-        this.objectData[34] = obj.secondaryDimensions.z;
+        const rotX = mat3.rotateX(sr.x * DEG_TO_RAD);
+        const rotY = mat3.rotateY(sr.y * DEG_TO_RAD);
+        const rotZ = mat3.rotateZ(sr.z * DEG_TO_RAD);
+        const secRot = mat3.multiply(rotZ, mat3.multiply(rotY, rotX));
 
-        // Floats (starting at index 36)
-        this.objectData[36] = obj.borderRadius;
-        this.objectData[37] = obj.thickness;
-        this.objectData[38] = obj.speed;
-        this.objectData[39] = obj.longevity; // u_trailLength
+        // Column 0
+        this.objectData[28] = secRot[0];
+        this.objectData[29] = secRot[1];
+        this.objectData[30] = secRot[2];
+        this.objectData[31] = 0;
+        // Column 1
+        this.objectData[32] = secRot[3];
+        this.objectData[33] = secRot[4];
+        this.objectData[34] = secRot[5];
+        this.objectData[35] = 0;
+        // Column 2
+        this.objectData[36] = secRot[6];
+        this.objectData[37] = secRot[7];
+        this.objectData[38] = secRot[8];
+        this.objectData[39] = 0;
+        // Column 3
+        this.objectData[40] = 0;
+        this.objectData[41] = 0;
+        this.objectData[42] = 0;
+        this.objectData[43] = 1;
 
-        this.objectData[40] = obj.ease;
-        this.objectData[41] = obj.numLines;
-        this.objectData[42] = obj.morphFactor;
+        this.objectData[44] = sd.x;
+        this.objectData[45] = sd.y;
+        this.objectData[46] = sd.z;
 
-        this.objectData[43] = obj.svgExtrusionDepth ?? 0.5;
-        this.objectData[44] = SDF_SPREAD;
-        this.objectData[45] = this.svgSdfResolution;
-        this.objectData[46] = obj.bendAmount;
+        // Floats (starting at index 48)
+        this.objectData[48] = obj.borderRadius;
+        this.objectData[49] = obj.thickness;
+        this.objectData[50] = obj.speed;
+        this.objectData[51] = obj.longevity; // u_trailLength
 
-        this.objectData[47] = obj.bendAngle;
-        this.objectData[48] = obj.bendOffset;
-        this.objectData[49] = obj.bendLimit;
-        this.objectData[50] = obj.rimIntensity ?? 0.4;
+        this.objectData[52] = obj.ease;
+        this.objectData[53] = obj.numLines;
+        this.objectData[54] = obj.morphFactor;
 
-        this.objectData[51] = obj.rimPower ?? 3.0;
-        this.objectData[52] = obj.wireOpacity ?? 0.1;
-        this.objectData[53] = obj.wireIntensity ?? 0.1;
-        this.objectData[54] = obj.layerDelay ?? 0.02;
+        this.objectData[55] = obj.svgExtrusionDepth ?? 0.5;
+        this.objectData[56] = SDF_SPREAD;
+        this.objectData[57] = this.svgSdfResolution;
+        this.objectData[58] = obj.bendAmount;
 
-        this.objectData[55] = obj.torusThickness ?? 0.2;
-        this.objectData[56] = obj.lineBrightness ?? 2.5;
-        this.objectData[57] = obj.compositeSmoothness ?? 0.1;
+        this.objectData[59] = obj.bendAngle;
+        this.objectData[60] = obj.bendOffset;
+        this.objectData[61] = obj.bendLimit;
+        this.objectData[62] = obj.rimIntensity ?? 0.4;
+
+        this.objectData[63] = obj.rimPower ?? 3.0;
+        this.objectData[64] = obj.wireOpacity ?? 0.1;
+        this.objectData[65] = obj.wireIntensity ?? 0.1;
+        this.objectData[66] = obj.layerDelay ?? 0.02;
+
+        this.objectData[67] = obj.torusThickness ?? 0.2;
+        this.objectData[68] = obj.lineBrightness ?? 2.5;
+        this.objectData[69] = obj.compositeSmoothness ?? 0.1;
 
         // Ints (using the int32 view on the same buffer)
-        this.objectDataInt[58] = WebGLRenderer.SHAPE_MAP[obj.shapeType] ?? 0;
-        this.objectDataInt[59] = WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0;
-        this.objectDataInt[60] = WebGLRenderer.ORIENT_MAP[obj.orientation] ?? 0;
+        this.objectDataInt[70] = WebGLRenderer.SHAPE_MAP[obj.shapeType] ?? 0;
+        this.objectDataInt[71] = WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0;
+        this.objectDataInt[72] = WebGLRenderer.ORIENT_MAP[obj.orientation] ?? 0;
 
         const needsSvg = obj.shapeType === 'SVG' || obj.shapeTypeNext === 'SVG';
-        this.objectDataInt[61] = (needsSvg && this.svgSdfTexture) ? 1 : 0;
-        this.objectDataInt[62] = WebGLRenderer.BEND_AXIS_MAP[obj.bendAxis] ?? 1;
-        this.objectDataInt[63] = WebGLRenderer.COMPOSITE_MAP[obj.compositeMode] ?? 0;
-        this.objectDataInt[64] = WebGLRenderer.SHAPE_MAP[obj.secondaryShapeType] ?? 1;
-        this.objectDataInt[65] = obj.enableBackface ? 1 : 0;
+        this.objectDataInt[73] = (needsSvg && this.svgSdfTexture) ? 1 : 0;
+        this.objectDataInt[74] = WebGLRenderer.BEND_AXIS_MAP[obj.bendAxis] ?? 1;
+        this.objectDataInt[75] = WebGLRenderer.COMPOSITE_MAP[obj.compositeMode] ?? 0;
+        this.objectDataInt[76] = WebGLRenderer.SHAPE_MAP[obj.secondaryShapeType] ?? 1;
+        this.objectDataInt[77] = obj.enableBackface ? 1 : 0;
 
         // Task 13: Calculate combined bounding box for CSG shapes
         const margin = (Math.abs(obj.bendAmount) < 0.05 && obj.compositeMode === 'None') ? 1.2 : 2.0;
-        this.objectData[66] = margin;
+        this.objectData[78] = margin;
 
         let rbX = obj.dimensions.x, rbY = obj.dimensions.y, rbZ = obj.dimensions.z;
         if (obj.compositeMode !== 'None') {
-            // Transform secondary box corners to primary local space
             const sr = [obj.secondaryRotation.x * DEG_TO_RAD, obj.secondaryRotation.y * DEG_TO_RAD, obj.secondaryRotation.z * DEG_TO_RAD];
             const rot = mat3.multiply(mat3.rotateZ(sr[2]), mat3.multiply(mat3.rotateY(sr[1]), mat3.rotateX(sr[0])));
             const sd = obj.secondaryDimensions;
@@ -410,9 +435,9 @@ export class WebGLRenderer {
                 rbZ = Math.max(rbZ, Math.abs(p[2]));
             }
         }
-        this.objectData[68] = rbX;
-        this.objectData[69] = rbY;
-        this.objectData[70] = rbZ;
+        this.objectData[80] = rbX;
+        this.objectData[81] = rbY;
+        this.objectData[82] = rbZ;
 
         // Bounding Volume Early-Out (Tier 3 Optimization)
         // Calculate a bounding sphere radius that encompasses the whole object including secondary parts and bending
@@ -420,33 +445,33 @@ export class WebGLRenderer {
         // Increased safety margin significantly to resolve user-reported cropping
         const bendFactor = 1.0 + Math.abs(obj.bendAmount) * 2.5;
         const diagonal = Math.sqrt(rbX * rbX + rbY * rbY + rbZ * rbZ) + obj.borderRadius;
-        this.objectData[71] = diagonal * margin * bendFactor * 1.5; // Added extra 1.5x safety multiplier
+        this.objectData[83] = diagonal * margin * bendFactor * 1.5; // Added extra 1.5x safety multiplier
 
-        // Previous Object State (Indices 72-83)
+        // Previous Object State (Indices 84-95)
         const prevState = this.prevObjStates.get(obj.id);
         if (prevState) {
-            this.objectData[72] = prevState.position.x;
-            this.objectData[73] = prevState.position.y;
-            this.objectData[74] = prevState.position.z;
+            this.objectData[84] = prevState.position.x;
+            this.objectData[85] = prevState.position.y;
+            this.objectData[86] = prevState.position.z;
 
-            this.objectData[76] = prevState.dimensions.x;
-            this.objectData[77] = prevState.dimensions.y;
-            this.objectData[78] = prevState.dimensions.z;
+            this.objectData[88] = prevState.dimensions.x;
+            this.objectData[89] = prevState.dimensions.y;
+            this.objectData[90] = prevState.dimensions.z;
 
-            this.objectData[80] = prevState.rotation.x * DEG_TO_RAD;
-            this.objectData[81] = prevState.rotation.y * DEG_TO_RAD;
-            this.objectData[82] = prevState.rotation.z * DEG_TO_RAD;
+            this.objectData[92] = prevState.rotation.x * DEG_TO_RAD;
+            this.objectData[93] = prevState.rotation.y * DEG_TO_RAD;
+            this.objectData[94] = prevState.rotation.z * DEG_TO_RAD;
         } else {
             // First frame: copy current to previous
-            this.objectData[72] = obj.position.x;
-            this.objectData[73] = obj.position.y;
-            this.objectData[74] = obj.position.z;
-            this.objectData[76] = obj.dimensions.x;
-            this.objectData[77] = obj.dimensions.y;
-            this.objectData[78] = obj.dimensions.z;
-            this.objectData[80] = obj.rotation.x * DEG_TO_RAD;
-            this.objectData[81] = obj.rotation.y * DEG_TO_RAD;
-            this.objectData[82] = obj.rotation.z * DEG_TO_RAD;
+            this.objectData[84] = obj.position.x;
+            this.objectData[85] = obj.position.y;
+            this.objectData[86] = obj.position.z;
+            this.objectData[88] = obj.dimensions.x;
+            this.objectData[89] = obj.dimensions.y;
+            this.objectData[90] = obj.dimensions.z;
+            this.objectData[92] = obj.rotation.x * DEG_TO_RAD;
+            this.objectData[93] = obj.rotation.y * DEG_TO_RAD;
+            this.objectData[94] = obj.rotation.z * DEG_TO_RAD;
         }
 
         // Adaptive Step Count (P2 Optimization)
@@ -458,8 +483,8 @@ export class WebGLRenderer {
             (camPos[2] - objPos[2]) ** 2
         );
 
-        const baseSteps = 40; // match #define in createShader
-        const baseBackSteps = 16;
+        const baseSteps = 48; // match #define in createShader
+        const baseBackSteps = 24;
         const minSteps = 12;
 
         const complexity = (obj.compositeMode !== 'None' || obj.morphFactor > 0.01) ? 1.5 : 1.0;
@@ -467,8 +492,8 @@ export class WebGLRenderer {
         const maxSteps = Math.max(minSteps, Math.floor(baseSteps * morphPenalty / (1.0 + Math.max(0, dist - 5.0) * 0.05 * complexity)));
         const maxBackSteps = Math.max(minSteps, Math.floor(baseBackSteps * morphPenalty / (1.0 + Math.max(0, dist - 5.0) * 0.05 * complexity)));
 
-        this.objectDataInt[84] = maxSteps;
-        this.objectDataInt[85] = maxBackSteps;
+        this.objectDataInt[96] = maxSteps;
+        this.objectDataInt[97] = maxBackSteps;
 
         this.prevObjStates.set(obj.id, {
             position: { ...obj.position },
