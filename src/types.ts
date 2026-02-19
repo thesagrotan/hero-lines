@@ -47,6 +47,7 @@ export interface SceneObject {
     bendAxis: 'X' | 'Y' | 'Z';
     bendOffset: number;
     bendLimit: number;
+    enableBackface: boolean;
 
     // CSG Properties
     compositeMode: CompositeMode;

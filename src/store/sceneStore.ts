@@ -77,6 +77,7 @@ const INITIAL_OBJECT: SceneObject = {
     bendAxis: 'X',
     bendOffset: 0,
     bendLimit: 1.0,
+    enableBackface: true,
     svgExtrusionDepth: 0.5,
     rimIntensity: 0.4,
     rimPower: 3.0,
@@ -289,6 +290,8 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
             layerDelay: 0.02,
             torusThickness: 0.2,
             lineBrightness: 2.5,
+            enableBackface: true,
+
 
         };
 
@@ -314,6 +317,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
                 bendAxis: 'Y',
                 bendOffset: 0,
                 bendLimit: 1.0,
+                enableBackface: true,
                 svgExtrusionDepth: baseStyle.svgExtrusionDepth,
                 rimIntensity: baseStyle.rimIntensity,
                 rimPower: baseStyle.rimPower,

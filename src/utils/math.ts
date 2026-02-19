@@ -12,7 +12,8 @@ export const vec3 = {
         const l = Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
         return l > 0 ? [a[0] / l, a[1] / l, a[2] / l] : [0, 0, 0];
     },
-    multiplyScalar: (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s]
+    multiplyScalar: (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s],
+    add: (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 };
 
 export type Mat3 = [

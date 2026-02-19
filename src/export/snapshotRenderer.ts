@@ -73,7 +73,8 @@ function calculateScissorRect(scene, obj, width, height) {
     const right = norm(mv(mI, worldRight));
     const up    = norm(mv(mI, worldUp));
 
-    const margin = 2.0;
+    // Task 7: Adaptive margin
+    const margin = (Math.abs(obj.bendAmount) < 0.05 && (obj.compositeMode === 'None' || obj._compositeMode === 0)) ? 1.2 : 2.0;
     const b = [obj.dimensions.x * margin, obj.dimensions.y * margin, obj.dimensions.z * margin];
     const signs = [-1, 1];
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -120,8 +121,8 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
     }
 
     // Setup UBOs
-    const sceneData = new Float32Array(12);
-    const objectData = new Float32Array(68);
+    const sceneData = new Float32Array(24);
+    const objectData = new Float32Array(96);
     const objectDataInt = new Int32Array(objectData.buffer);
 
     let sceneUbo = null;
@@ -242,6 +243,7 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
             _bendAxis:           BEND_AXIS_MAP[o.bendAxis]       || 1,
             _compositeMode:      COMPOSITE_MAP[o.compositeMode]  || 0,
             _secondaryShapeType: SHAPE_MAP[o.secondaryShapeType] || 1,
+            enableBackface:      o.enableBackface === undefined  || o.enableBackface,
         };
     });
 
@@ -353,6 +355,43 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
             objectDataInt[63] = obj._bendAxis;
             objectDataInt[64] = obj._compositeMode;
             objectDataInt[65] = obj._secondaryShapeType;
+            objectDataInt[66] = obj.enableBackface ? 1 : 0;
+
+            // Task 7 & 13: Adaptive margin and combined bounds
+            const margin = (Math.abs(obj.bendAmount) < 0.05 && (obj.compositeMode === 'None' || obj._compositeMode === 0)) ? 1.2 : 2.0;
+            objectData[67] = margin;
+
+            let rbX = obj.dimensions.x, rbY = obj.dimensions.y, rbZ = obj.dimensions.z;
+            if (obj._compositeMode !== 0) {
+                const sx = Math.sin(obj._srx), cx = Math.cos(obj._srx);
+                const sy = Math.sin(obj._sry), cy = Math.cos(obj._sry);
+                const sz = Math.sin(obj._srz), cz = Math.cos(obj._srz);
+                const RX = [1,0,0, 0,cx,-sx, 0,sx,cx];
+                const RY = [cy,0,sy, 0,1,0, -sy,0,cy];
+                const RZ = [cz,-sz,0, sz,cz,0, 0,0,1];
+                function mul3(A, B) {
+                    const R = new Array(9);
+                    for (let r = 0; r < 3; r++)
+                        for (let c = 0; c < 3; c++)
+                            R[r*3+c] = A[r*3+0]*B[0*3+c] + A[r*3+1]*B[1*3+c] + A[r*3+2]*B[2*3+c];
+                    return R;
+                }
+                const rot = mul3(mul3(RZ, RY), RX);
+                function mv(m, v) { return [m[0]*v[0]+m[1]*v[1]+m[2]*v[2], m[3]*v[0]+m[4]*v[1]+m[5]*v[2], m[6]*v[0]+m[7]*v[1]+m[8]*v[2]]; }
+                function vadd(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+                const sd = [obj._sdx, obj._sdy, obj._sdz];
+                const sp = [obj._spx, obj._spy, obj._spz];
+                const signs = [-1, 1];
+                for (const bx of signs) for (const by of signs) for (const bz of signs) {
+                    const p = vadd(sp, mv(rot, [bx*sd[0], by*sd[1], bz*sd[2]]));
+                    rbX = Math.max(rbX, Math.abs(p[0]));
+                    rbY = Math.max(rbY, Math.abs(p[1]));
+                    rbZ = Math.max(rbZ, Math.abs(p[2]));
+                }
+            }
+            objectData[68] = rbX;
+            objectData[69] = rbY;
+            objectData[70] = rbZ;
 
             if (objectUbo) {
                 gl.bindBuffer(gl.UNIFORM_BUFFER, objectUbo);

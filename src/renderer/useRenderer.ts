@@ -2,7 +2,7 @@ import { useEffect, useRef, type RefObject } from 'react';
 import { useSceneStore } from '../store/sceneStore';
 import { WebGLRenderer } from './WebGLRenderer';
 import { SvgSdfManager } from './SvgSdfManager';
-import { vsSource, fsSource } from '../shaders';
+import { vsSource, fsSource, prepassSource } from '../shaders';
 import { TransitionSnapshot, RenderableObject, ShapeType } from '../types';
 import { interpolateTransition, createTransitionSnapshot } from '../utils/transitionUtils';
 import { updateRenderableObjects } from './renderUtils';
@@ -31,7 +31,7 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
         // Initialize renderer
         let svgSdfManager: SvgSdfManager;
         try {
-            rendererRef.current = new WebGLRenderer(canvas, vsSource, fsSource);
+            rendererRef.current = new WebGLRenderer(canvas, vsSource, fsSource, prepassSource);
             svgSdfManager = new SvgSdfManager(512);
         } catch (err) {
             console.error('Failed to initialize WebGL renderer:', err);

@@ -63,6 +63,11 @@ export const ObjectControls = () => {
                     label: 'Torus Thickness',
                     onChange: objectOnChange('torusThickness', updateObject),
                 },
+                enableBackface: {
+                    value: true,
+                    label: 'Backface Pass',
+                    onChange: objectOnChange('enableBackface', updateObject),
+                },
             }, { collapsed: false }),
 
             'Lines': folder({
@@ -240,6 +245,7 @@ export const ObjectControls = () => {
             layerDelay: obj.layerDelay,
             torusThickness: obj.torusThickness,
             lineBrightness: obj.lineBrightness,
+            enableBackface: obj.enableBackface,
 
             compositeMode: obj.compositeMode,
             secondaryShapeType: obj.secondaryShapeType,

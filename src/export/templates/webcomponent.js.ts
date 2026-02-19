@@ -32,7 +32,8 @@ const VS_SOURCE = ${JSON.stringify(vsSource)};
 const FS_SOURCE = fsSource.replace('#version 300 es', \`#version 300 es
 #define MAX_STEPS 64
 #define MAX_BACK_STEPS 32
-#define HIT_EPS 0.001\`);
+#define HIT_EPS 0.001
+#define SIMPLE_BACKFACE_NORMALS\`);
 
 // ── SVG SDF Module ──
 ${svgSdfCode}

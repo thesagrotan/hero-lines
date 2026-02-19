@@ -7,6 +7,13 @@ layout(std140) uniform SceneData {
     float _pad0;
     vec3 u_camPos;
     vec3 u_bgColor;
+    
+    // Previous Frame Scene State
+    vec2 u_prevResolution;
+    float u_prevTime;
+    float _pad1;
+    vec3 u_prevCamPos;
+    vec3 u_prevBgColor;
 };
 
 layout(std140) uniform ObjectData {
@@ -57,9 +64,20 @@ layout(std140) uniform ObjectData {
     
     int u_compositeMode;
     int u_secondaryShapeType;
+    int u_enableBackface;
+    float u_renderBoxMargin; // Added for Task 13
+    
+    vec3 u_renderBoxSize; float _pad3; // Added for Task 13
+    
+    // Previous Frame Object State
+    vec3 u_prevPosition; float _p10;
+    vec3 u_prevBoxSize;  float _p11;
+    vec3 u_prevRot;      float _p12;
 };
 
 uniform sampler2D u_svgSdfTex;
+uniform sampler2D u_prepassTex;
+uniform sampler2D u_prevPrepassTex;
 
 float hash(float n) {
     return fract(sin(n) * 43758.5453123);
@@ -233,6 +251,9 @@ float sdSvgExtrude(vec3 p, vec3 boxSize, int orient) {
     // raw_value * spread_pixels / resolution_pixels * object_scale
     float rawSdf = texture(u_svgSdfTex, texUV).r;
     float sdf2d = rawSdf * (u_svgSpread / u_svgResolution) * scaleAxis;
+    // Task 13: Added safety bounds for SVG sampling
+    float box2d = sdRoundBox(vec3(uv2d, 0.0), vec3(planeSize, 1.0), 0.0);
+    sdf2d = max(sdf2d, box2d);
     // Extrusion: combine 2D distance with depth cap
     float extDist = (abs(extAxis) - u_svgExtrusionDepth) * max(boxSize.x, max(boxSize.y, boxSize.z));
     return max(sdf2d, extDist);
@@ -257,42 +278,73 @@ float getShapeDist(vec3 p, vec3 boxSize, float radius, int shapeType) {
 
 
 float mapBody(vec3 pBent, vec3 boxSize, float radius) {
-    vec3 pScaled = pBent;
+    // Task 6C: Fast path for simple shapes (no morph, no composite)
+    if (u_morphFactor <= 0.0 && u_compositeMode == 0) {
+        return getShapeDist(pBent, boxSize, radius, u_shapeType);
+    }
     
     float d1;
     if (u_morphFactor <= 0.0) {
-        d1 = getShapeDist(pScaled, boxSize, radius, u_shapeType);
+        d1 = getShapeDist(pBent, boxSize, radius, u_shapeType);
     } else {
-        float da = getShapeDist(pScaled, boxSize, radius, u_shapeType);
-        float db = getShapeDist(pScaled, boxSize, radius, u_shapeTypeNext);
+        float da = getShapeDist(pBent, boxSize, radius, u_shapeType);
+        float db = getShapeDist(pBent, boxSize, radius, u_shapeTypeNext);
         d1 = mix(da, db, u_morphFactor);
     }
     
-    float d;
-    if (u_compositeMode == 0) {
-        d = d1;
-    } else {
-        // Evaluate secondary shape
-        vec3 pSecondary = pScaled - u_secondaryPosition;
-        pSecondary *= rotZ(u_secondaryRotation.z) * rotY(u_secondaryRotation.y) * rotX(u_secondaryRotation.x);
-        float d2 = getShapeDist(pSecondary, u_secondaryDimensions, radius, u_secondaryShapeType);
-        
-        if (u_compositeMode == 1) d = min(d1, d2);
-        else if (u_compositeMode == 2) d = max(d1, -d2);
-        else if (u_compositeMode == 3) d = max(d1, d2);
-        else if (u_compositeMode == 4) d = smin(d1, d2, u_compositeSmoothness);
-        else d = d1;
-    }
+    if (u_compositeMode == 0) return d1;
+
+    // Evaluate secondary shape
+    vec3 pSecondary = pBent - u_secondaryPosition;
+    pSecondary *= rotZ(u_secondaryRotation.z) * rotY(u_secondaryRotation.y) * rotX(u_secondaryRotation.x);
     
-    return d;
+    // Task 13: Bounding-volume early exit
+    float d2_box = sdRoundBox(pSecondary, u_secondaryDimensions, radius);
+    
+    // Logic: if d1 is outside the influence of the secondary shape's bounding box,
+    // we can skip the expensive SDF. 
+    bool skip_d2 = false;
+    if (u_compositeMode == 1) { // Union
+        if (d1 < d2_box) skip_d2 = true;
+    } else if (u_compositeMode == 4) { // SmoothUnion
+        if (d1 < d2_box - u_compositeSmoothness) skip_d2 = true;
+    } else if (u_compositeMode == 2) { // Subtract
+        if (d1 > -d2_box && d2_box > 0.01) skip_d2 = true;
+    } else if (u_compositeMode == 3) { // Intersect
+        if (d1 > d2_box && d2_box > 0.01) return max(d1, d2_box); // Early exit with box bound
+    }
+
+    if (skip_d2) return d1;
+
+    float d2 = getShapeDist(pSecondary, u_secondaryDimensions, radius, u_secondaryShapeType);
+    
+    if (u_compositeMode == 1) return min(d1, d2);
+    if (u_compositeMode == 2) return max(d1, -d2);
+    if (u_compositeMode == 3) return max(d1, d2);
+    if (u_compositeMode == 4) return smin(d1, d2, u_compositeSmoothness);
+    
+    return d1;
 }
 
 float map(vec3 p, vec3 boxSize, float radius) {
-    vec3 pBent = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+    // Task 10: Skip opBend function call if bend is negligible
+    vec3 pBent = (abs(u_bendAmount) < 0.001) ? p : opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
     return mapBody(pBent, boxSize, radius);
 }
 
 vec3 calcNormalBent(vec3 pBent, vec3 boxSize, float radius) {
+    #ifdef CHEAP_NORMALS
+    // Forward difference (3 additional samples, reusing current distance is tricky because p is slightly offset)
+    // Actually, tetrahedral is already very efficient at 4 samples. 
+    // Forward difference with 3 samples:
+    const float h = 0.0001;
+    float d = mapBody(pBent, boxSize, radius);
+    return normalize(vec3(
+        mapBody(pBent + vec3(h, 0, 0), boxSize, radius) - d,
+        mapBody(pBent + vec3(0, h, 0), boxSize, radius) - d,
+        mapBody(pBent + vec3(0, 0, h), boxSize, radius) - d
+    ));
+    #else
     const float h = 0.0001;
     const vec2 k = vec2(1.0, -1.0);
     return normalize(
@@ -301,6 +353,7 @@ vec3 calcNormalBent(vec3 pBent, vec3 boxSize, float radius) {
         k.yxy * mapBody(pBent + k.yxy * h, boxSize, radius) + 
         k.xxx * mapBody(pBent + k.xxx * h, boxSize, radius)
     );
+    #endif
 }
 
 
@@ -311,13 +364,20 @@ vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
     return (tN > tF || tF < 0.0) ? vec2(-1.0) : vec2(tN, tF);
 }
 
-vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isBack, vec3 n) {
-    float sliceCoord = (u_orientation == 1) ? p.y : (u_orientation == 2) ? p.z : (u_orientation == 3) ? (p.x + p.y + p.z) * 0.57735 : p.x;
+float getSliceCoord(vec3 p, vec3 boxSize) {
+    if (u_orientation == 1) return p.y;
+    if (u_orientation == 2) return p.z;
+    if (u_orientation == 3) return (p.x + p.y + p.z) * 0.57735;
+    return p.x;
+}
+
+vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isBack, vec3 n, float ds) {
+    float sliceCoord = getSliceCoord(p, boxSize);
     float sliceRange = (u_orientation == 1) ? 2.0 * boxSize.y : (u_orientation == 2) ? 2.0 * boxSize.z : (u_orientation == 3) ? length(2.0 * boxSize) : 2.0 * boxSize.x;
     float norm = clamp((sliceCoord + sliceRange * 0.5) / sliceRange, 0.0, 1.0);
     float layerIdx = floor(norm * u_numLines), layerGap = sliceRange / (u_numLines + 0.001);
     float layerCenter = (layerIdx + 0.5) * layerGap - sliceRange * 0.5;
-    float ds = fwidth(sliceCoord), actualThick = min(thickness, layerGap * 0.48);
+    float actualThick = min(thickness, layerGap * 0.48);
     float lineMask = 1.0 - smoothstep(actualThick - ds, actualThick + ds, abs(sliceCoord - layerCenter));
     vec3 pUse = clamp(p, -boxSize, boxSize);
     float p1 = pUse.y, p2 = pUse.z, b1 = boxSize.y, b2 = boxSize.z;
@@ -360,12 +420,22 @@ vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
 #endif
 
 vec4 render(vec3 ro_l, vec3 rd) {
-    vec2 tBox = intersectBox(ro_l, rd, u_boxSize);
+    vec2 tBox = intersectBox(ro_l, rd, u_renderBoxSize); // Task 13: Use u_renderBoxSize
     vec3 col = vec3(0.0);
     float alpha = 0.0;
     
     if (tBox.y > 0.0) {
         float t = max(0.0, tBox.x); bool hit = false; vec3 p;
+        
+        // Task 11: Half-resolution pre-pass early exit
+        vec2 screenUV = gl_FragCoord.xy / u_resolution;
+        float prepassT = texture(u_prepassTex, screenUV).r;
+        if (prepassT < 0.0) return vec4(0.0); // Pre-pass missed, absolute skip
+        
+        // Start raymarching slightly before the pre-pass hit point for safety
+        t = max(t, prepassT - 0.05);
+
+        float lastD = 1e10;
         for(int i=0; i<MAX_STEPS; i++) { 
             // Simple shapes converge faster, reduce front-pass steps (P1 Optimization)
             if (u_compositeMode == 0 && u_morphFactor <= 0.0 && i >= 16) break;
@@ -373,40 +443,57 @@ vec4 render(vec3 ro_l, vec3 rd) {
             p = ro_l + rd * t; 
             float d = map(p, u_boxSize, u_borderRadius); 
             if(d < HIT_EPS) { hit = true; break; } 
-            t += d; 
+            
+            // Task 8: Distance-based step acceleration
+            float stepScale = (d > 0.1 && d >= lastD) ? 1.5 : 1.0;
+            t += d * stepScale; 
+            lastD = d;
+            
             if(t > tBox.y) break; 
         }
         if(hit) { 
-            vec3 pBent = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+            vec3 pBent = (abs(u_bendAmount) < 0.001) ? p : opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
             vec3 n = calcNormalBent(pBent, u_boxSize, u_borderRadius);
             
             float rim = pow(1.0 - max(dot(-rd, n), 0.0), u_rimPower) * u_rimIntensity;
             vec3 rimRGB = u_rimColor * rim;
             
-            vec4 surface = getSurfaceColor(pBent, u_boxSize, u_time, u_borderThickness, false, n);
+            float ds = fwidth(getSliceCoord(pBent, u_boxSize));
+            vec4 surface = getSurfaceColor(pBent, u_boxSize, u_time, u_borderThickness, false, n, ds);
             col = surface.rgb + rimRGB;
             alpha = surface.a + rim;
-        }
-        
-        if (alpha < 0.95) {
-            vec3 ro_b = ro_l + rd * tBox.y, rd_b = -rd; float tb = 0.0; hit = false;
-            for(int i=0; i<MAX_BACK_STEPS; i++) { 
-                // Simple shapes converge faster, reduce back-pass steps (P1 Optimization)
-                if (u_compositeMode == 0 && i >= 16) break;
-                
-                p = ro_b + rd_b * tb; 
-                float d = map(p, u_boxSize, u_borderRadius); 
-                if(d < HIT_EPS) { hit = true; break; } 
-                tb += d; 
-                if(tb > (tBox.y - tBox.x + 0.1)) break; 
-            }
-            if(hit) {
-                vec3 pBentB = opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
-                vec3 nB = calcNormalBent(pBentB, u_boxSize, u_borderRadius);
-                
-                vec4 surfaceBack = getSurfaceColor(pBentB, u_boxSize, u_time, u_borderThickness, true, nB);
-                col += surfaceBack.rgb * (1.0 - alpha); 
-                alpha += surfaceBack.a * (1.0 - alpha);
+            
+            if (u_enableBackface == 1 && alpha < 0.99) {
+                vec3 ro_b = ro_l + rd * tBox.y, rd_b = -rd; float tb = 0.0; hit = false;
+                float lastDb = 1e10;
+                for(int i=0; i<MAX_BACK_STEPS; i++) { 
+                    // Simple shapes converge faster, reduce back-pass steps (P1 Optimization)
+                    if (u_compositeMode == 0 && i >= 16) break;
+                    
+                    p = ro_b + rd_b * tb; 
+                    float d = map(p, u_boxSize, u_borderRadius); 
+                    if(d < HIT_EPS) { hit = true; break; } 
+                    
+                    // Task 8: Distance-based step acceleration
+                    float stepScale = (d > 0.1 && d >= lastDb) ? 1.5 : 1.0;
+                    tb += d * stepScale; 
+                    lastDb = d;
+                    
+                    if(tb > (tBox.y - tBox.x + 0.1)) break; 
+                }
+                if(hit) {
+                    vec3 pBentB = (abs(u_bendAmount) < 0.001) ? p : opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
+                    
+                    #ifdef SIMPLE_BACKFACE_NORMALS
+                    vec3 nB = -rd;
+                    #else
+                    vec3 nB = calcNormalBent(pBentB, u_boxSize, u_borderRadius);
+                    #endif
+                    
+                    vec4 surfaceBack = getSurfaceColor(pBentB, u_boxSize, u_time, u_borderThickness, true, nB, ds);
+                    col += surfaceBack.rgb * (1.0 - alpha); 
+                    alpha += surfaceBack.a * (1.0 - alpha);
+                }
             }
         }
     }

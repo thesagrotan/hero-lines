@@ -1,4 +1,4 @@
-import { SceneState, RenderableObject } from '../types';
+import { SceneState, RenderableObject, Vector3 } from '../types';
 import { SDF_SPREAD } from '../utils/svgParser';
 import { vec3, mat3, Vec3 } from '../utils/math';
 
@@ -7,13 +7,24 @@ const DEG_TO_RAD = Math.PI / 180;
 export class WebGLRenderer {
     private gl: WebGL2RenderingContext;
     private program: WebGLProgram;
+    private prepassProgram: WebGLProgram;
     private uniforms: Record<string, WebGLUniformLocation> = {};
+    private prepassUniforms: Record<string, WebGLUniformLocation> = {};
     private quadBuffer: WebGLBuffer;
     private sceneUbo: WebGLBuffer;
     private objectUbo: WebGLBuffer;
-    private sceneData = new Float32Array(12); // 48 bytes
-    private objectData = new Float32Array(68); // 272 bytes
+
+    private prepassFbos: [WebGLFramebuffer | null, WebGLFramebuffer | null] = [null, null];
+    private prepassTextures: [WebGLTexture | null, WebGLTexture | null] = [null, null];
+    private prepassIndex = 0;
+    private prepassResolutionScale = 0.5;
+
+    private sceneData = new Float32Array(24); // 96 bytes (added 12 floats for previous state)
+    private objectData = new Float32Array(96); // 384 bytes (Task 13: added renderBoxSize and margin)
     private objectDataInt = new Int32Array(this.objectData.buffer);
+
+    private prevCamPos = new Float32Array(3);
+    private prevObjStates: Map<string, { position: Vector3, rotation: Vector3, dimensions: Vector3 }> = new Map();
 
     private svgSdfTexture: WebGLTexture | null = null;
     private svgSdfResolution: number = 0;
@@ -35,7 +46,7 @@ export class WebGLRenderer {
         None: 0, Union: 1, Subtract: 2, Intersect: 3, SmoothUnion: 4
     };
 
-    constructor(canvas: HTMLCanvasElement, vsSource: string, fsSource: string) {
+    constructor(canvas: HTMLCanvasElement, vsSource: string, fsSource: string, prepassSource: string) {
         const gl = canvas.getContext('webgl2', { alpha: false, antialias: true })!;
         if (!gl) throw new Error('WebGL2 not supported');
         this.gl = gl;
@@ -53,9 +64,23 @@ export class WebGLRenderer {
         }
         this.program = program;
 
+        const pvs = this.createShader(gl.VERTEX_SHADER, vsSource);
+        const pfs = this.createShader(gl.FRAGMENT_SHADER, prepassSource);
+        const prepassProgram = gl.createProgram()!;
+        gl.attachShader(prepassProgram, pvs);
+        gl.attachShader(prepassProgram, pfs);
+        gl.linkProgram(prepassProgram);
+        if (!gl.getProgramParameter(prepassProgram, gl.LINK_STATUS)) {
+            throw new Error(gl.getProgramInfoLog(prepassProgram) || 'Prepass program link error');
+        }
+        this.prepassProgram = prepassProgram;
+
         // Bind Uniform Blocks
         const sceneBlockIndex = gl.getUniformBlockIndex(program, 'SceneData');
         gl.uniformBlockBinding(program, sceneBlockIndex, 0);
+        const prepassSceneBlockIndex = gl.getUniformBlockIndex(prepassProgram, 'SceneData');
+        gl.uniformBlockBinding(prepassProgram, prepassSceneBlockIndex, 0);
+
         this.sceneUbo = gl.createBuffer()!;
         gl.bindBuffer(gl.UNIFORM_BUFFER, this.sceneUbo);
         gl.bufferData(gl.UNIFORM_BUFFER, this.sceneData.byteLength, gl.DYNAMIC_DRAW);
@@ -63,6 +88,9 @@ export class WebGLRenderer {
 
         const objectBlockIndex = gl.getUniformBlockIndex(program, 'ObjectData');
         gl.uniformBlockBinding(program, objectBlockIndex, 1);
+        const prepassObjectBlockIndex = gl.getUniformBlockIndex(prepassProgram, 'ObjectData');
+        gl.uniformBlockBinding(prepassProgram, prepassObjectBlockIndex, 1);
+
         this.objectUbo = gl.createBuffer()!;
         gl.bindBuffer(gl.UNIFORM_BUFFER, this.objectUbo);
         gl.bufferData(gl.UNIFORM_BUFFER, this.objectData.byteLength, gl.DYNAMIC_DRAW);
@@ -71,6 +99,18 @@ export class WebGLRenderer {
         // Cache sampler locations
         const svgTexLoc = gl.getUniformLocation(program, 'u_svgSdfTex');
         if (svgTexLoc) this.uniforms['u_svgSdfTex'] = svgTexLoc;
+
+        const prepassTexLoc = gl.getUniformLocation(program, 'u_prepassTex');
+        if (prepassTexLoc) this.uniforms['u_prepassTex'] = prepassTexLoc;
+
+        const prevPrepassTexLoc = gl.getUniformLocation(program, 'u_prevPrepassTex');
+        if (prevPrepassTexLoc) this.uniforms['u_prevPrepassTex'] = prevPrepassTexLoc;
+
+        const prepassSvgTexLoc = gl.getUniformLocation(prepassProgram, 'u_svgSdfTex');
+        if (prepassSvgTexLoc) this.prepassUniforms['u_svgSdfTex'] = prepassSvgTexLoc;
+
+        const prepassPrevTexLoc = gl.getUniformLocation(prepassProgram, 'u_prevPrepassTex');
+        if (prepassPrevTexLoc) this.prepassUniforms['u_prevPrepassTex'] = prepassPrevTexLoc;
 
         // Setup fullscreen quad
         this.quadBuffer = gl.createBuffer()!;
@@ -90,6 +130,7 @@ export class WebGLRenderer {
 
         // Cache extensions
         this.hasFloatLinear = !!gl.getExtension('OES_texture_float_linear');
+        gl.getExtension('EXT_color_buffer_float');
     }
 
     private createShader(type: number, source: string): WebGLShader {
@@ -99,7 +140,9 @@ export class WebGLRenderer {
             finalSource = source.replace('#version 300 es', `#version 300 es
 #define MAX_STEPS 40
 #define MAX_BACK_STEPS 16
-#define HIT_EPS 0.005`);
+#define HIT_EPS 0.005
+#define CHEAP_NORMALS
+#define SIMPLE_BACKFACE_NORMALS`);
         }
         this.gl.shaderSource(shader, finalSource);
         this.gl.compileShader(shader);
@@ -145,146 +188,288 @@ export class WebGLRenderer {
 
     public renderFrame(scene: SceneState, objects: RenderableObject[], time: number) {
         const gl = this.gl;
-        gl.useProgram(this.program);
 
-        // Clear with background color
-        const bg = this.hexToRgb(scene.bgColor);
-        gl.clearColor(bg[0], bg[1], bg[2], 1.0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-
-        // Enable scissor test
-        gl.enable(gl.SCISSOR_TEST);
-
-        // Scene-level UBO update
-        this.sceneData[0] = gl.canvas.width;
-        this.sceneData[1] = gl.canvas.height;
-        this.sceneData[2] = time * 0.001;
-        // sceneData[3] is padding
-
+        // 1. Scene-level UBO update (shared by both passes)
+        const currentRes = [gl.canvas.width, gl.canvas.height];
+        const currentTime = time * 0.001;
         const iz = 1.0 / scene.zoom;
-        this.sceneData[4] = scene.camera.x * iz;
-        this.sceneData[5] = scene.camera.y * iz;
-        this.sceneData[6] = scene.camera.z * iz;
-        // sceneData[7] is padding
+        const currentCam = [scene.camera.x * iz, scene.camera.y * iz, scene.camera.z * iz];
+        const bg = this.hexToRgb(scene.bgColor);
 
+        // Previous Scene State (Indices 12-23)
+        this.sceneData.copyWithin(12, 0, 12); // Shift current to previous
+
+        // Current Scene State (Indices 0-11)
+        this.sceneData[0] = currentRes[0];
+        this.sceneData[1] = currentRes[1];
+        this.sceneData[2] = currentTime;
+        this.sceneData[4] = currentCam[0];
+        this.sceneData[5] = currentCam[1];
+        this.sceneData[6] = currentCam[2];
         this.sceneData[8] = bg[0];
         this.sceneData[9] = bg[1];
         this.sceneData[10] = bg[2];
-        // sceneData[11] is padding
 
         gl.bindBuffer(gl.UNIFORM_BUFFER, this.sceneUbo);
         gl.bufferSubData(gl.UNIFORM_BUFFER, 0, this.sceneData);
 
+        // Clear main framebuffer with background color
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.clearColor(bg[0], bg[1], bg[2], 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        // 2. Render each object
         objects.forEach(obj => {
             if (!obj.visible) return;
 
             // Object-level UBO update
-            // Vec3s (offsets 0, 16, 32, 48, 64, 80, 96, 112, 128)
-            this.objectData[0] = obj.position.x;
-            this.objectData[1] = obj.position.y;
-            this.objectData[2] = obj.position.z;
+            this.updateObjectUbo(obj);
 
-            this.objectData[4] = obj.dimensions.x;
-            this.objectData[5] = obj.dimensions.y;
-            this.objectData[6] = obj.dimensions.z;
+            const currPrepassIndex = this.prepassIndex;
+            const prevPrepassIndex = 1 - this.prepassIndex;
 
-            this.objectData[8] = obj.rotation.x * DEG_TO_RAD;
-            this.objectData[9] = obj.rotation.y * DEG_TO_RAD;
-            this.objectData[10] = obj.rotation.z * DEG_TO_RAD;
+            // Ensure no textures are bound to units that could cause feedback loops during pre-pass
+            this.unbindAllTextures();
 
-            const c1 = this.hexToRgb(obj.color1);
-            this.objectData[12] = c1[0];
-            this.objectData[13] = c1[1];
-            this.objectData[14] = c1[2];
+            // Pass 1: PRE-PASS (Half Resolution)
+            if (this.prepassFbos[currPrepassIndex]) {
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.prepassFbos[currPrepassIndex]);
+                gl.viewport(0, 0, gl.canvas.width * this.prepassResolutionScale, gl.canvas.height * this.prepassResolutionScale);
+                gl.useProgram(this.prepassProgram);
 
-            const c2 = this.hexToRgb(obj.color2);
-            this.objectData[16] = c2[0];
-            this.objectData[17] = c2[1];
-            this.objectData[18] = c2[2];
+                // Disable blending for pre-pass (writing hit distance, no transparency needed)
+                gl.disable(gl.BLEND);
 
-            const rc = this.hexToRgb(obj.rimColor);
-            this.objectData[20] = rc[0];
-            this.objectData[21] = rc[1];
-            this.objectData[22] = rc[2];
+                // Clear pre-pass buffer with -1.0 (miss)
+                gl.clearColor(-1.0, 0.0, 0.0, 1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
 
-            this.objectData[24] = obj.secondaryPosition.x;
-            this.objectData[25] = obj.secondaryPosition.y;
-            this.objectData[26] = obj.secondaryPosition.z;
+                this.bindTextures(obj, this.prepassProgram, this.prepassUniforms);
 
-            this.objectData[28] = obj.secondaryRotation.x * DEG_TO_RAD;
-            this.objectData[29] = obj.secondaryRotation.y * DEG_TO_RAD;
-            this.objectData[30] = obj.secondaryRotation.z * DEG_TO_RAD;
+                // Bind PREVIOUS pre-pass texture for reprojection hint
+                if (this.prepassTextures[prevPrepassIndex]) {
+                    gl.activeTexture(gl.TEXTURE2);
+                    gl.bindTexture(gl.TEXTURE_2D, this.prepassTextures[prevPrepassIndex]);
+                    gl.uniform1i(this.prepassUniforms['u_prevPrepassTex'], 2);
+                }
 
-            this.objectData[32] = obj.secondaryDimensions.x;
-            this.objectData[33] = obj.secondaryDimensions.y;
-            this.objectData[34] = obj.secondaryDimensions.z;
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-            // Floats (starting at index 36)
-            this.objectData[36] = obj.borderRadius;
-            this.objectData[37] = obj.thickness;
-            this.objectData[38] = obj.speed;
-            this.objectData[39] = obj.longevity; // u_trailLength
+                // Re-enable blending for main pass
+                gl.enable(gl.BLEND);
 
-            this.objectData[40] = obj.ease;
-            this.objectData[41] = obj.numLines;
-            this.objectData[42] = obj.morphFactor;
-            this.objectData[43] = obj.timeNoise;
-
-            this.objectData[44] = obj.svgExtrusionDepth ?? 0.5;
-            this.objectData[45] = SDF_SPREAD;
-            this.objectData[46] = this.svgSdfResolution;
-            this.objectData[47] = obj.bendAmount;
-
-            this.objectData[48] = obj.bendAngle;
-            this.objectData[49] = obj.bendOffset;
-            this.objectData[50] = obj.bendLimit;
-            this.objectData[51] = obj.rimIntensity ?? 0.4;
-
-            this.objectData[52] = obj.rimPower ?? 3.0;
-            this.objectData[53] = obj.wireOpacity ?? 0.1;
-            this.objectData[54] = obj.wireIntensity ?? 0.1;
-            this.objectData[55] = obj.layerDelay ?? 0.02;
-
-            this.objectData[56] = obj.torusThickness ?? 0.2;
-            this.objectData[57] = obj.lineBrightness ?? 2.5;
-            this.objectData[58] = obj.compositeSmoothness ?? 0.1;
-
-            // Ints (using the int32 view on the same buffer)
-            this.objectDataInt[59] = WebGLRenderer.SHAPE_MAP[obj.shapeType] ?? 0;
-            this.objectDataInt[60] = WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0;
-            this.objectDataInt[61] = WebGLRenderer.ORIENT_MAP[obj.orientation] ?? 0;
-
-            const needsSvg = obj.shapeType === 'SVG' || obj.shapeTypeNext === 'SVG';
-            this.objectDataInt[62] = (needsSvg && this.svgSdfTexture) ? 1 : 0;
-            this.objectDataInt[63] = WebGLRenderer.BEND_AXIS_MAP[obj.bendAxis] ?? 1;
-            this.objectDataInt[64] = WebGLRenderer.COMPOSITE_MAP[obj.compositeMode] ?? 0;
-            this.objectDataInt[65] = WebGLRenderer.SHAPE_MAP[obj.secondaryShapeType] ?? 1;
-
-            gl.bindBuffer(gl.UNIFORM_BUFFER, this.objectUbo);
-            gl.bufferSubData(gl.UNIFORM_BUFFER, 0, this.objectData);
-
-            // SVG SDF texture binding remains separate
-            if (needsSvg && this.svgSdfTexture) {
-                gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, this.svgSdfTexture);
-                gl.uniform1i(this.uniforms['u_svgSdfTex'], 0);
+                // Unbind previous pre-pass texture to avoid feedback loop
+                gl.activeTexture(gl.TEXTURE2);
+                gl.bindTexture(gl.TEXTURE_2D, null);
             }
 
-            // Scissoring: Compute screen-space bounding box
+            // Pass 2: MAIN PASS (Full Resolution)
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            gl.useProgram(this.program);
+
+            // Enable scissor test ONLY for the main pass to save fill-rate on the final shade
+            gl.enable(gl.SCISSOR_TEST);
             const scissor = this.calculateScissorRect(scene, obj, gl.canvas.width, gl.canvas.height);
-            if (scissor) {
-                if (scissor.w <= 0 || scissor.h <= 0) return;
+            if (scissor && scissor.w > 0 && scissor.h > 0) {
                 gl.scissor(scissor.x, scissor.y, scissor.w, scissor.h);
             } else {
-                // If calculation fails or object is too close/behind, default to full screen
                 gl.scissor(0, 0, gl.canvas.width, gl.canvas.height);
             }
 
-            // Draw fullscreen quad for this object
+            this.bindTextures(obj, this.program, this.uniforms);
+
+            // Bind current pre-pass texture to main shader
+            if (this.prepassTextures[currPrepassIndex]) {
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, this.prepassTextures[currPrepassIndex]);
+                gl.uniform1i(this.uniforms['u_prepassTex'], 1);
+            }
+
+            // Bind previous pre-pass texture to main shader (optional use)
+            if (this.prepassTextures[prevPrepassIndex]) {
+                gl.activeTexture(gl.TEXTURE2);
+                gl.bindTexture(gl.TEXTURE_2D, this.prepassTextures[prevPrepassIndex]);
+                gl.uniform1i(this.uniforms['u_prevPrepassTex'], 2);
+            }
+
             gl.drawArrays(gl.TRIANGLES, 0, 6);
+            gl.disable(gl.SCISSOR_TEST);
+
+            // Unbind textures after main pass to avoid feedback loop in next pre-pass
+            this.unbindAllTextures();
         });
 
-        gl.disable(gl.SCISSOR_TEST);
+        // Swap pre-pass buffers for next frame
+        this.prepassIndex = 1 - this.prepassIndex;
+    }
+
+    private updateObjectUbo(obj: RenderableObject) {
+        // Object-level UBO update logic moved from renderFrame
+        // Vec3s (offsets 0, 16, 32, 48, 64, 80, 96, 112, 128)
+        this.objectData[0] = obj.position.x;
+        this.objectData[1] = obj.position.y;
+        this.objectData[2] = obj.position.z;
+
+        this.objectData[4] = obj.dimensions.x;
+        this.objectData[5] = obj.dimensions.y;
+        this.objectData[6] = obj.dimensions.z;
+
+        this.objectData[8] = obj.rotation.x * DEG_TO_RAD;
+        this.objectData[9] = obj.rotation.y * DEG_TO_RAD;
+        this.objectData[10] = obj.rotation.z * DEG_TO_RAD;
+
+        const c1 = this.hexToRgb(obj.color1);
+        this.objectData[12] = c1[0];
+        this.objectData[13] = c1[1];
+        this.objectData[14] = c1[2];
+
+        const c2 = this.hexToRgb(obj.color2);
+        this.objectData[16] = c2[0];
+        this.objectData[17] = c2[1];
+        this.objectData[18] = c2[2];
+
+        const rc = this.hexToRgb(obj.rimColor);
+        this.objectData[20] = rc[0];
+        this.objectData[21] = rc[1];
+        this.objectData[22] = rc[2];
+
+        this.objectData[24] = obj.secondaryPosition.x;
+        this.objectData[25] = obj.secondaryPosition.y;
+        this.objectData[26] = obj.secondaryPosition.z;
+
+        this.objectData[28] = obj.secondaryRotation.x * DEG_TO_RAD;
+        this.objectData[29] = obj.secondaryRotation.y * DEG_TO_RAD;
+        this.objectData[30] = obj.secondaryRotation.z * DEG_TO_RAD;
+
+        this.objectData[32] = obj.secondaryDimensions.x;
+        this.objectData[33] = obj.secondaryDimensions.y;
+        this.objectData[34] = obj.secondaryDimensions.z;
+
+        // Floats (starting at index 36)
+        this.objectData[36] = obj.borderRadius;
+        this.objectData[37] = obj.thickness;
+        this.objectData[38] = obj.speed;
+        this.objectData[39] = obj.longevity; // u_trailLength
+
+        this.objectData[40] = obj.ease;
+        this.objectData[41] = obj.numLines;
+        this.objectData[42] = obj.morphFactor;
+        this.objectData[43] = obj.timeNoise;
+
+        this.objectData[44] = obj.svgExtrusionDepth ?? 0.5;
+        this.objectData[45] = SDF_SPREAD;
+        this.objectData[46] = this.svgSdfResolution;
+        this.objectData[47] = obj.bendAmount;
+
+        this.objectData[48] = obj.bendAngle;
+        this.objectData[49] = obj.bendOffset;
+        this.objectData[50] = obj.bendLimit;
+        this.objectData[51] = obj.rimIntensity ?? 0.4;
+
+        this.objectData[52] = obj.rimPower ?? 3.0;
+        this.objectData[53] = obj.wireOpacity ?? 0.1;
+        this.objectData[54] = obj.wireIntensity ?? 0.1;
+        this.objectData[55] = obj.layerDelay ?? 0.02;
+
+        this.objectData[56] = obj.torusThickness ?? 0.2;
+        this.objectData[57] = obj.lineBrightness ?? 2.5;
+        this.objectData[58] = obj.compositeSmoothness ?? 0.1;
+
+        // Ints (using the int32 view on the same buffer)
+        this.objectDataInt[59] = WebGLRenderer.SHAPE_MAP[obj.shapeType] ?? 0;
+        this.objectDataInt[60] = WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0;
+        this.objectDataInt[61] = WebGLRenderer.ORIENT_MAP[obj.orientation] ?? 0;
+
+        const needsSvg = obj.shapeType === 'SVG' || obj.shapeTypeNext === 'SVG';
+        this.objectDataInt[62] = (needsSvg && this.svgSdfTexture) ? 1 : 0;
+        this.objectDataInt[63] = WebGLRenderer.BEND_AXIS_MAP[obj.bendAxis] ?? 1;
+        this.objectDataInt[64] = WebGLRenderer.COMPOSITE_MAP[obj.compositeMode] ?? 0;
+        this.objectDataInt[65] = WebGLRenderer.SHAPE_MAP[obj.secondaryShapeType] ?? 1;
+        this.objectDataInt[66] = obj.enableBackface ? 1 : 0;
+
+        // Task 13: Calculate combined bounding box for CSG shapes
+        const margin = (Math.abs(obj.bendAmount) < 0.05 && obj.compositeMode === 'None') ? 1.2 : 2.0;
+        this.objectData[67] = margin;
+
+        let rbX = obj.dimensions.x, rbY = obj.dimensions.y, rbZ = obj.dimensions.z;
+        if (obj.compositeMode !== 'None') {
+            // Transform secondary box corners to primary local space
+            const sr = [obj.secondaryRotation.x * DEG_TO_RAD, obj.secondaryRotation.y * DEG_TO_RAD, obj.secondaryRotation.z * DEG_TO_RAD];
+            const rot = mat3.multiply(mat3.rotateZ(sr[2]), mat3.multiply(mat3.rotateY(sr[1]), mat3.rotateX(sr[0])));
+            const sd = obj.secondaryDimensions;
+            const sp = obj.secondaryPosition;
+            const corners = [
+                [-sd.x, -sd.y, -sd.z], [sd.x, -sd.y, -sd.z], [-sd.x, sd.y, -sd.z], [sd.x, sd.y, -sd.z],
+                [-sd.x, -sd.y, sd.z], [sd.x, -sd.y, sd.z], [-sd.x, sd.y, sd.z], [sd.x, sd.y, sd.z]
+            ];
+            for (const c of corners) {
+                const p = vec3.add([sp.x, sp.y, sp.z], mat3.multiplyVec(rot, c as Vec3));
+                rbX = Math.max(rbX, Math.abs(p[0]));
+                rbY = Math.max(rbY, Math.abs(p[1]));
+                rbZ = Math.max(rbZ, Math.abs(p[2]));
+            }
+        }
+        this.objectData[68] = rbX;
+        this.objectData[69] = rbY;
+        this.objectData[70] = rbZ;
+
+        // Previous Object State (Indices 72-83)
+        const prevState = this.prevObjStates.get(obj.id);
+        if (prevState) {
+            this.objectData[72] = prevState.position.x;
+            this.objectData[73] = prevState.position.y;
+            this.objectData[74] = prevState.position.z;
+
+            this.objectData[76] = prevState.dimensions.x;
+            this.objectData[77] = prevState.dimensions.y;
+            this.objectData[78] = prevState.dimensions.z;
+
+            this.objectData[80] = prevState.rotation.x * DEG_TO_RAD;
+            this.objectData[81] = prevState.rotation.y * DEG_TO_RAD;
+            this.objectData[82] = prevState.rotation.z * DEG_TO_RAD;
+        } else {
+            // First frame: copy current to previous
+            this.objectData[72] = obj.position.x;
+            this.objectData[73] = obj.position.y;
+            this.objectData[74] = obj.position.z;
+            this.objectData[76] = obj.dimensions.x;
+            this.objectData[77] = obj.dimensions.y;
+            this.objectData[78] = obj.dimensions.z;
+            this.objectData[80] = obj.rotation.x * DEG_TO_RAD;
+            this.objectData[81] = obj.rotation.y * DEG_TO_RAD;
+            this.objectData[82] = obj.rotation.z * DEG_TO_RAD;
+        }
+
+        this.prevObjStates.set(obj.id, {
+            position: { ...obj.position },
+            rotation: { ...obj.rotation },
+            dimensions: { ...obj.dimensions }
+        });
+
+        this.gl.bindBuffer(this.gl.UNIFORM_BUFFER, this.objectUbo);
+        this.gl.bufferSubData(this.gl.UNIFORM_BUFFER, 0, this.objectData);
+    }
+
+    private unbindAllTextures() {
+        const gl = this.gl;
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+
+    private bindTextures(obj: RenderableObject, program: WebGLProgram, uniforms: Record<string, WebGLUniformLocation>) {
+        const gl = this.gl;
+        const needsSvg = obj.shapeType === 'SVG' || obj.shapeTypeNext === 'SVG';
+        if (needsSvg && this.svgSdfTexture) {
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this.svgSdfTexture);
+            const loc = uniforms['u_svgSdfTex'];
+            if (loc) gl.uniform1i(loc, 0);
+        }
     }
 
     private calculateScissorRect(
@@ -323,15 +508,29 @@ export class WebGLRenderer {
         const right = vec3.normalize(mat3.multiplyVec(mI, worldRight));
         const up = vec3.normalize(mat3.multiplyVec(mI, worldUp));
 
-        // AABB corners in local space. 
-        // We use a margin to account for effects like pulse, bend, and wobble.
-        // intersectBox uses 1.5, we use 2.0 to be safe.
-        const margin = 2.0;
-        const b = [
-            obj.dimensions.x * margin,
-            obj.dimensions.y * margin,
-            obj.dimensions.z * margin
-        ];
+        // Task 7 & 13: Adaptive margin and combined bounds
+        const margin = (Math.abs(obj.bendAmount) < 0.05 && obj.compositeMode === 'None') ? 1.2 : 2.0;
+
+        // Calculate the same rbX, rbY, rbZ as in updateObjectUbo to ensure consistency
+        let rbX = obj.dimensions.x, rbY = obj.dimensions.y, rbZ = obj.dimensions.z;
+        if (obj.compositeMode !== 'None') {
+            const sr = [obj.secondaryRotation.x * DEG_TO_RAD, obj.secondaryRotation.y * DEG_TO_RAD, obj.secondaryRotation.z * DEG_TO_RAD];
+            const rot = mat3.multiply(mat3.rotateZ(sr[2]), mat3.multiply(mat3.rotateY(sr[1]), mat3.rotateX(sr[0])));
+            const sd = obj.secondaryDimensions;
+            const sp = obj.secondaryPosition;
+            const cornersSecondary = [
+                [-sd.x, -sd.y, -sd.z], [sd.x, -sd.y, -sd.z], [-sd.x, sd.y, -sd.z], [sd.x, sd.y, -sd.z],
+                [-sd.x, -sd.y, sd.z], [sd.x, -sd.y, sd.z], [-sd.x, sd.y, sd.z], [sd.x, sd.y, sd.z]
+            ];
+            for (const c of cornersSecondary) {
+                const p = vec3.add([sp.x, sp.y, sp.z], mat3.multiplyVec(rot, c as Vec3));
+                rbX = Math.max(rbX, Math.abs(p[0]));
+                rbY = Math.max(rbY, Math.abs(p[1]));
+                rbZ = Math.max(rbZ, Math.abs(p[2]));
+            }
+        }
+
+        const b = [rbX * margin, rbY * margin, rbZ * margin];
 
         const corners: Vec3[] = [
             [-b[0], -b[1], -b[2]], [b[0], -b[1], -b[2]], [-b[0], b[1], -b[2]], [b[0], b[1], -b[2]],
@@ -394,13 +593,42 @@ export class WebGLRenderer {
 
     public resize(width: number, height: number) {
         this.gl.viewport(0, 0, width, height);
+        this.setupPrepassFbo(width, height);
+    }
+
+    private setupPrepassFbo(width: number, height: number) {
+        const gl = this.gl;
+        const w = Math.floor(width * this.prepassResolutionScale);
+        const h = Math.floor(height * this.prepassResolutionScale);
+
+        for (let i = 0; i < 2; i++) {
+            if (this.prepassFbos[i]) gl.deleteFramebuffer(this.prepassFbos[i]);
+            if (this.prepassTextures[i]) gl.deleteTexture(this.prepassTextures[i]);
+
+            this.prepassTextures[i] = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, this.prepassTextures[i]);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, w, h, 0, gl.RED, gl.FLOAT, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+            this.prepassFbos[i] = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, this.prepassFbos[i]);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.prepassTextures[i], 0);
+        }
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     public dispose() {
         this.gl.deleteProgram(this.program);
+        this.gl.deleteProgram(this.prepassProgram);
         this.gl.deleteBuffer(this.quadBuffer);
-        if (this.svgSdfTexture) {
-            this.gl.deleteTexture(this.svgSdfTexture);
+        if (this.svgSdfTexture) this.gl.deleteTexture(this.svgSdfTexture);
+        for (let i = 0; i < 2; i++) {
+            if (this.prepassFbos[i]) this.gl.deleteFramebuffer(this.prepassFbos[i]);
+            if (this.prepassTextures[i]) this.gl.deleteTexture(this.prepassTextures[i]);
         }
     }
 }
