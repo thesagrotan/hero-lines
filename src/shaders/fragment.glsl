@@ -197,15 +197,17 @@ float sdSvgExtrude(vec3 p, vec3 boxSize, int orient) {
 }
 
 float getShapeDist(vec3 p, vec3 innerSize, float radius, int shapeType) {
-    if (shapeType == 0) return sdRoundBox(p, innerSize, radius);
-    if (shapeType == 1) return sdEllipsoid(p, innerSize) - radius;
-    if (shapeType == 2) return sdCone(p, innerSize, u_orientation) - radius;
-    if (shapeType == 3) return sdTorus(p, innerSize, u_orientation) - radius;
-    if (shapeType == 5) return sdCylinder(p, innerSize, u_orientation) - radius;
-    if (shapeType == 4) return sdCapsule(p, innerSize, u_orientation) - radius;
-    if (shapeType == 6 && u_hasSvgSdf == 1) return sdSvgExtrude(p, innerSize + radius, u_orientation);
-    if (shapeType == 7) return sdLaptop(p, innerSize, radius);
-    return sdRoundBox(p, innerSize, radius);
+    switch(shapeType) {
+        case 1: return sdEllipsoid(p, innerSize) - radius;
+        case 2: return sdCone(p, innerSize, u_orientation) - radius;
+        case 3: return sdTorus(p, innerSize, u_orientation) - radius;
+        case 4: return sdCapsule(p, innerSize, u_orientation) - radius;
+        case 5: return sdCylinder(p, innerSize, u_orientation) - radius;
+        case 6: if (u_hasSvgSdf == 1) return sdSvgExtrude(p, innerSize + radius, u_orientation);
+                return sdRoundBox(p, innerSize, radius);
+        case 7: return sdLaptop(p, innerSize, radius);
+        default: return sdRoundBox(p, innerSize, radius);
+    }
 }
 
 
@@ -266,6 +268,25 @@ vec3 calcNormalBent(vec3 pBent, vec3 boxSize, float radius, float hitD, mat3 sec
     ));
 }
 
+// P1-5: Analytical normals — eliminates 3 SDF calls per hit for simple shapes
+vec3 analyticalNormalSphere(vec3 p) {
+    return normalize(p);
+}
+
+vec3 analyticalNormalRoundBox(vec3 p, vec3 b) {
+    // Gradient of sdRoundBox: dominant axis from distance to each face
+    vec3 q = abs(p) - b;
+    vec3 s = sign(p);
+    // Outside region: gradient of length(max(q,0))
+    if (max(q.x, max(q.y, q.z)) > 0.0) {
+        return normalize(s * max(q, vec3(0.0)));
+    }
+    // Inside region: closest face normal
+    if (q.x > q.y && q.x > q.z) return vec3(s.x, 0, 0);
+    if (q.y > q.z) return vec3(0, s.y, 0);
+    return vec3(0, 0, s.z);
+}
+
 
 
 vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
@@ -283,32 +304,65 @@ float intersectSphere(vec3 ro, vec3 rd, float r) {
     return -b - sqrt(h);
 }
 
-float getSliceCoord(vec3 p, vec3 boxSize) {
-    if (u_orientation == 1) return p.y;
-    if (u_orientation == 2) return p.z;
-    if (u_orientation == 3) return (p.x + p.y + p.z) * 0.57735;
+// P2-2: Precomputed orientation info — eliminates per-pixel uniform branches in shading
+struct OrientInfo {
+    int sliceAxis;      // 0=x, 1=y, 2=z, 3=diagonal
+    float sliceRange;
+    int p1Axis;         // perimeter axis 1
+    int p2Axis;         // perimeter axis 2
+    vec3 dotDir;        // direction for dotV calculation
+};
+
+OrientInfo buildOrientInfo(vec3 boxSize) {
+    OrientInfo o;
+    if (u_orientation == 1) {
+        o.sliceAxis = 1; o.sliceRange = 2.0 * boxSize.y;
+        o.p1Axis = 0; o.p2Axis = 2;
+        o.dotDir = vec3(0, 1, 0);
+    } else if (u_orientation == 2) {
+        o.sliceAxis = 2; o.sliceRange = 2.0 * boxSize.z;
+        o.p1Axis = 0; o.p2Axis = 1;
+        o.dotDir = vec3(0, 0, 1);
+    } else if (u_orientation == 3) {
+        o.sliceAxis = 3; o.sliceRange = length(2.0 * boxSize);
+        o.p1Axis = 1; o.p2Axis = 2; // default for diagonal
+        o.dotDir = vec3(0.577);
+    } else {
+        o.sliceAxis = 0; o.sliceRange = 2.0 * boxSize.x;
+        o.p1Axis = 1; o.p2Axis = 2;
+        o.dotDir = vec3(1, 0, 0);
+    }
+    return o;
+}
+
+float getSliceCoord(vec3 p, OrientInfo oi) {
+    if (oi.sliceAxis == 1) return p.y;
+    if (oi.sliceAxis == 2) return p.z;
+    if (oi.sliceAxis == 3) return (p.x + p.y + p.z) * 0.57735;
     return p.x;
 }
 
-vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isBack, vec3 n, float ds) {
-    float sliceCoord = getSliceCoord(p, boxSize);
-    float sliceRange = (u_orientation == 1) ? 2.0 * boxSize.y : (u_orientation == 2) ? 2.0 * boxSize.z : (u_orientation == 3) ? length(2.0 * boxSize) : 2.0 * boxSize.x;
+vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isBack, vec3 n, float ds, OrientInfo oi) {
+    float sliceCoord = getSliceCoord(p, oi);
+    float sliceRange = oi.sliceRange;
     float norm = clamp((sliceCoord + sliceRange * 0.5) / sliceRange, 0.0, 1.0);
     float layerIdx = floor(norm * u_numLines), layerGap = sliceRange / (u_numLines + 0.001);
     float layerCenter = (layerIdx + 0.5) * layerGap - sliceRange * 0.5;
     float actualThick = min(thickness, layerGap * 0.48);
     float lineMask = 1.0 - smoothstep(actualThick - ds, actualThick + ds, abs(sliceCoord - layerCenter));
     vec3 pUse = clamp(p, -boxSize, boxSize);
-    float p1 = pUse.y, p2 = pUse.z, b1 = boxSize.y, b2 = boxSize.z;
-    if (u_orientation == 1) { p1 = pUse.x; p2 = pUse.z; b1 = boxSize.x; b2 = boxSize.z; }
-    else if (u_orientation == 2) { p1 = pUse.x; p2 = pUse.y; b1 = boxSize.x; b2 = boxSize.y; }
+    // Index-driven perimeter axis selection (replaces orientation branches)
+    float p1 = (oi.p1Axis == 0) ? pUse.x : (oi.p1Axis == 1) ? pUse.y : pUse.z;
+    float p2 = (oi.p2Axis == 0) ? pUse.x : (oi.p2Axis == 1) ? pUse.y : pUse.z;
+    float b1 = (oi.p1Axis == 0) ? boxSize.x : (oi.p1Axis == 1) ? boxSize.y : boxSize.z;
+    float b2 = (oi.p2Axis == 0) ? boxSize.x : (oi.p2Axis == 1) ? boxSize.y : boxSize.z;
     float perimeter = (abs(p2 * b1) > abs(p1 * b2)) ? ((p2 > 0.0) ? (b1 + p1) : (3.0 * b1 + 2.0 * b2 - p1)) : ((p1 > 0.0) ? (2.0 * b1 + b2 - p2) : (4.0 * b1 + 3.0 * b2 + p2));
     
     float progress = mod(time * u_speed - layerIdx * u_layerDelay, 3.0);
     float dist = fract(progress - (perimeter / (4.0 * (b1 + b2) + 0.001)));
     float isActive = (dist < u_trailLength) ? pow(smoothstep(0.0, max(0.01, u_ease), 1.0 - abs(1.0 - (dist / u_trailLength) * 2.0)), 1.5) : 0.0;
     
-    float dotV = (u_orientation == 1) ? abs(n.y) : (u_orientation == 2) ? abs(n.z) : (u_orientation == 3) ? abs(dot(n, vec3(0.577))) : abs(n.x);
+    float dotV = abs(dot(n, oi.dotDir));
     float lineAlpha = lineMask * isActive * smoothstep(0.1, 0.4, 1.0 - dotV);
     
     vec3 wireColor = vec3(0);
@@ -341,7 +395,7 @@ vec4 getSurfaceColor(vec3 p, vec3 boxSize, float time, float thickness, bool isB
 #define HIT_EPS 0.003
 #endif
 
-vec4 render(vec3 ro_l, vec3 rd, vec2 bendSC, float invK, mat3 secRotMat) {
+vec4 render(vec3 ro_l, vec3 rd, vec2 bendSC, float invK, mat3 secRotMat, OrientInfo oi) {
     // Tier 3 Optimization: Ray-Sphere Early-Out
     float tSphere = intersectSphere(ro_l, rd, u_boundingRadius);
     if (tSphere < 0.0 && length(ro_l) > u_boundingRadius) return vec4(0.0);
@@ -354,12 +408,14 @@ vec4 render(vec3 ro_l, vec3 rd, vec2 bendSC, float invK, mat3 secRotMat) {
         float t = max(0.0, tBox.x); bool hit = false; vec3 p;
         
         // Task 11: Half-resolution pre-pass early exit
+        #ifndef EXPORT_MODE
         vec2 screenUV = gl_FragCoord.xy / u_resolution;
         float prepassT = texture(u_prepassTex, screenUV).r;
         if (prepassT < 0.0) return vec4(0.0); // Pre-pass missed, absolute skip
         
         // Start raymarching slightly before the pre-pass hit point for safety
         t = max(t, prepassT - 0.05);
+        #endif
 
         float lastD = 1e10;
         float finalD = 0.0;
@@ -383,14 +439,24 @@ vec4 render(vec3 ro_l, vec3 rd, vec2 bendSC, float invK, mat3 secRotMat) {
         }
         if(hit) { 
             vec3 pBent = (abs(u_bendAmount) < 0.001) ? p : opBend(p, u_bendAmount, bendSC, u_bendAxis, u_bendOffset, u_bendLimit, invK);
-            vec3 n = calcNormalBent(pBent, u_boxSize, u_borderRadius, finalD, secRotMat);
+            
+            // P1-5: Use analytical normals for simple unbent shapes (saves 3 SDF calls)
+            vec3 n;
+            if (u_compositeMode == 0 && u_morphFactor <= 0.0 && abs(u_bendAmount) < 0.001) {
+                vec3 innerSize = max(u_boxSize - vec3(u_borderRadius), vec3(0.0001));
+                if (u_shapeType == 1) n = analyticalNormalSphere(pBent);
+                else if (u_shapeType == 0) n = analyticalNormalRoundBox(pBent, innerSize);
+                else n = calcNormalBent(pBent, u_boxSize, u_borderRadius, finalD, secRotMat);
+            } else {
+                n = calcNormalBent(pBent, u_boxSize, u_borderRadius, finalD, secRotMat);
+            }
 
             
             float rim = pow(1.0 - max(dot(-rd, n), 0.0), u_rimPower) * u_rimIntensity;
             vec3 rimRGB = u_rimColor * rim;
             
-            float ds = fwidth(getSliceCoord(pBent, u_boxSize));
-            vec4 surface = getSurfaceColor(pBent, u_boxSize, u_time, u_borderThickness, false, n, ds);
+            float ds = fwidth(getSliceCoord(pBent, oi));
+            vec4 surface = getSurfaceColor(pBent, u_boxSize, u_time, u_borderThickness, false, n, ds, oi);
             col = surface.rgb + rimRGB;
             alpha = surface.a + rim;
             
@@ -426,7 +492,7 @@ vec4 render(vec3 ro_l, vec3 rd, vec2 bendSC, float invK, mat3 secRotMat) {
                     #endif
 
                     
-                    vec4 surfaceBack = getSurfaceColor(pBentB, u_boxSize, u_time, u_borderThickness, true, nB, ds);
+                    vec4 surfaceBack = getSurfaceColor(pBentB, u_boxSize, u_time, u_borderThickness, true, nB, ds, oi);
                     col += surfaceBack.rgb * (1.0 - alpha); 
                     alpha += surfaceBack.a * (1.0 - alpha);
                 }
@@ -457,8 +523,9 @@ void main() {
     vec2 bendSC = vec2(sin(a), cos(a));
     float invK = 1.0 / max(u_bendAmount, 0.0001);
     mat3 secRotMat = rotZ(u_secondaryRotation.z) * rotY(u_secondaryRotation.y) * rotX(u_secondaryRotation.x);
+    OrientInfo oi = buildOrientInfo(u_boxSize);
     
-    vec4 res = render(ro_l, rd, bendSC, invK, secRotMat);
+    vec4 res = render(ro_l, rd, bendSC, invK, secRotMat, oi);
     
     fragColor = vec4(res.rgb, res.a);
 }

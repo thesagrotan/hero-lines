@@ -370,8 +370,9 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
             const minSteps = 16;
             
             const complexity = (obj.compositeMode !== 'None' || obj.morphFactor > 0.01) ? 1.5 : 1.0;
-            const maxSteps = Math.max(minSteps, Math.floor(baseSteps / (1.0 + Math.max(0, dist - 10.0) * 0.05 * complexity)));
-            const maxBackSteps = Math.max(minSteps, Math.floor(baseBackSteps / (1.0 + Math.max(0, dist - 10.0) * 0.05 * complexity)));
+            const morphPenalty = (obj.morphFactor > 0.01) ? 0.65 : 1.0; // P2-4: Morph doubles SDF cost, reduce steps
+            const maxSteps = Math.max(minSteps, Math.floor(baseSteps * morphPenalty / (1.0 + Math.max(0, dist - 10.0) * 0.05 * complexity)));
+            const maxBackSteps = Math.max(minSteps, Math.floor(baseBackSteps * morphPenalty / (1.0 + Math.max(0, dist - 10.0) * 0.05 * complexity)));
 
             objectDataInt[84] = maxSteps;
             objectDataInt[85] = maxBackSteps;

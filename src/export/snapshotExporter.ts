@@ -23,6 +23,7 @@ function snapshotScene(scene: SceneState) {
         zoom: scene.zoom,
         bgColor: scene.bgColor,
         bgColorRgb: hexToRgbArray(scene.bgColor),
+        resolutionScale: 0.75, // P1-1: Default 0.75× for ~44% fewer pixels
     };
 }
 
@@ -69,6 +70,9 @@ function snapshotObjects(objects: SceneObject[]) {
                 secondaryRotation: { ...o.secondaryRotation },
                 secondaryDimensions: { ...o.secondaryDimensions },
                 compositeSmoothness: o.compositeSmoothness,
+
+                // P1-3: Only enable backface pass for semi-transparent objects
+                enableBackface: (o.wireOpacity ?? 0.1) < 0.9 || (o.numLines ?? 10) < 3,
             };
 
             // Only include SVG data if the object uses SVG shape

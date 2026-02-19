@@ -194,14 +194,17 @@ float sdSvgExtrude(vec3 p, vec3 boxSize, int orient) {
 
 float getShapeDist(vec3 p, vec3 boxSize, float radius, int shapeType) {
     vec3 innerSize = max(boxSize - vec3(radius), vec3(0.0001));
-    if (shapeType == 1) return sdEllipsoid(p, innerSize) - radius;
-    if (shapeType == 2) return sdCone(p, innerSize, u_orientation) - radius;
-    if (shapeType == 3) return sdTorus(p, innerSize, u_orientation) - radius;
-    if (shapeType == 4) return sdCapsule(p, innerSize, u_orientation) - radius;
-    if (shapeType == 5) return sdCylinder(p, innerSize, u_orientation) - radius;
-    if (shapeType == 6 && u_hasSvgSdf == 1) return sdSvgExtrude(p, boxSize, u_orientation);
-    if (shapeType == 7) return sdLaptop(p, innerSize, radius);
-    return sdRoundBox(p, innerSize, radius);
+    switch(shapeType) {
+        case 1: return sdEllipsoid(p, innerSize) - radius;
+        case 2: return sdCone(p, innerSize, u_orientation) - radius;
+        case 3: return sdTorus(p, innerSize, u_orientation) - radius;
+        case 4: return sdCapsule(p, innerSize, u_orientation) - radius;
+        case 5: return sdCylinder(p, innerSize, u_orientation) - radius;
+        case 6: if (u_hasSvgSdf == 1) return sdSvgExtrude(p, boxSize, u_orientation);
+                return sdRoundBox(p, innerSize, radius);
+        case 7: return sdLaptop(p, innerSize, radius);
+        default: return sdRoundBox(p, innerSize, radius);
+    }
 }
 
 float mapBody(vec3 pBent, vec3 boxSize, float radius, mat3 secRotMat) {

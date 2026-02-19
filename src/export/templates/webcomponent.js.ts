@@ -30,7 +30,7 @@ const VS_SOURCE = ${JSON.stringify(vsSource)};
 
 // ── Fragment Shader ──
 const FS_SOURCE = ${JSON.stringify(fsSource.replace('#version 300 es', `#version 300 es
-#define MAX_STEPS 64
+#define MAX_STEPS 48
 #define MIN_STEPS 16
 #define MAX_BACK_STEPS 32
 #define HIT_EPS 0.003
@@ -59,7 +59,7 @@ class HeroLinesSnapshot extends HTMLElement {
             <canvas></canvas>
         \`;
         const canvas = shadow.querySelector('canvas');
-        this._renderer = initSnapshot(canvas, SNAPSHOT, VS_SOURCE, FS_SOURCE, ${svgSdfModuleRef}, 1.0);
+        this._renderer = initSnapshot(canvas, SNAPSHOT, VS_SOURCE, FS_SOURCE, ${svgSdfModuleRef}, SNAPSHOT.scene.resolutionScale || 0.75);
         if (!this._renderer) return;
 
         this._ro = new ResizeObserver(() => this._renderer.resize());

@@ -45,8 +45,11 @@ export function useRenderer(canvasRef: RefObject<HTMLCanvasElement>) {
         const resize = () => {
             if (!canvas) return;
             const currentScale = useSceneStore.getState().scene.resolutionScale;
-            canvas.width = window.innerWidth * currentScale;
-            canvas.height = window.innerHeight * currentScale;
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = window.innerWidth * dpr * currentScale;
+            canvas.height = window.innerHeight * dpr * currentScale;
+            canvas.style.width = window.innerWidth + 'px';
+            canvas.style.height = window.innerHeight + 'px';
             rendererRef.current?.resize(canvas.width, canvas.height);
         };
 
