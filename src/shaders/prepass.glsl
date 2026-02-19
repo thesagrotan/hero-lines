@@ -37,7 +37,6 @@ layout(std140) uniform ObjectData {
     float u_ease;
     float u_numLines;
     float u_morphFactor;
-    float u_timeNoise;
     
     float u_svgExtrusionDepth;
     float u_svgSpread;
@@ -67,12 +66,18 @@ layout(std140) uniform ObjectData {
     int u_compositeMode;
     int u_secondaryShapeType;
     int u_enableBackface;
-    int _pad2;
+    float u_renderBoxMargin; // Index 67
     
-    // Previous Frame Object State
+    vec3 u_renderBoxSize; // Indices 68, 69, 70
+    float u_boundingRadius; // Index 71 (Tier 3 Optimization)
+    
+    // Previous Frame Object State (Index 72)
     vec3 u_prevPosition; float _p10;
     vec3 u_prevBoxSize;  float _p11;
     vec3 u_prevRot;      float _p12;
+    
+    int u_maxSteps;
+    int u_maxBackSteps;
 };
 
 uniform sampler2D u_svgSdfTex;
@@ -146,13 +151,12 @@ float sdLaptop(vec3 p, vec3 b, float r) {
     return min(base, screen);
 }
 
-vec3 opBend(in vec3 p, in float k, in float angle, in int axis, in float offset, in float limit) {
+vec3 opBend(in vec3 p, in float k, in vec2 bendSC, in int axis, in float offset, in float limit, in float invK) {
     if (abs(k) < 0.001) return p;
     vec3 q = p;
     if (axis == 0) q = p.yzx; 
     else if (axis == 2) q = p.xzy; 
-    float a = angle * 0.01745329;
-    float sa = sin(a), ca = cos(a);
+    float sa = bendSC.x, ca = bendSC.y;
     vec2 xz = mat2(ca, -sa, sa, ca) * q.xz;
     q.xz = xz;
     float y = q.y - offset;
@@ -162,9 +166,9 @@ vec3 opBend(in vec3 p, in float k, in float angle, in int axis, in float offset,
     float s = sin(theta);
     mat2 m = mat2(c, -s, s, c);
     vec2 xy = q.xy;
-    xy.x -= 1.0/k;
+    xy.x -= invK;
     xy = m * xy;
-    xy.x += 1.0/k;
+    xy.x += invK;
     if (y > limit) xy += vec2(-s, c) * (y - limit);
     else if (y < -limit) xy += vec2(s, c) * (y + limit);
     q.xy = xy;
@@ -200,7 +204,7 @@ float getShapeDist(vec3 p, vec3 boxSize, float radius, int shapeType) {
     return sdRoundBox(p, innerSize, radius);
 }
 
-float mapBody(vec3 pBent, vec3 boxSize, float radius) {
+float mapBody(vec3 pBent, vec3 boxSize, float radius, mat3 secRotMat) {
     if (u_morphFactor <= 0.0 && u_compositeMode == 0) {
         return getShapeDist(pBent, boxSize, radius, u_shapeType);
     }
@@ -213,8 +217,7 @@ float mapBody(vec3 pBent, vec3 boxSize, float radius) {
         d1 = mix(da, db, u_morphFactor);
     }
     if (u_compositeMode == 0) return d1;
-    vec3 pSecondary = pBent - u_secondaryPosition;
-    pSecondary *= rotZ(u_secondaryRotation.z) * rotY(u_secondaryRotation.y) * rotX(u_secondaryRotation.x);
+    vec3 pSecondary = (pBent - u_secondaryPosition) * secRotMat;
     float d2 = getShapeDist(pSecondary, u_secondaryDimensions, radius, u_secondaryShapeType);
     if (u_compositeMode == 1) return min(d1, d2);
     if (u_compositeMode == 2) return max(d1, -d2);
@@ -223,9 +226,19 @@ float mapBody(vec3 pBent, vec3 boxSize, float radius) {
     return d1;
 }
 
-float map(vec3 p, vec3 boxSize, float radius) {
-    vec3 pBent = (abs(u_bendAmount) < 0.001) ? p : opBend(p, u_bendAmount, u_bendAngle, u_bendAxis, u_bendOffset, u_bendLimit);
-    return mapBody(pBent, boxSize, radius);
+
+
+float map(vec3 p, vec3 boxSize, float radius, vec2 bendSC, float invK, mat3 secRotMat) {
+    vec3 pBent = (abs(u_bendAmount) < 0.001) ? p : opBend(p, u_bendAmount, bendSC, u_bendAxis, u_bendOffset, u_bendLimit, invK);
+    return mapBody(pBent, boxSize, radius, secRotMat);
+}
+
+float intersectSphere(vec3 ro, vec3 rd, float r) {
+    float b = dot(ro, rd);
+    float c = dot(ro, ro) - r * r;
+    float h = b * b - c;
+    if (h < 0.0) return -1.0;
+    return -b - sqrt(h);
 }
 
 vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
@@ -251,6 +264,13 @@ void main() {
     float resT = -1.0;
     
     if (tBox.y > 0.0) {
+        // Tier 3 Optimization: Ray-Sphere Early-Out
+        float tSphere = intersectSphere(ro_l, rd, u_boundingRadius);
+        if (tSphere < 0.0 && length(ro_l) > u_boundingRadius) {
+             fragColor = vec4(-1.0, 0.0, 0.0, 1.0);
+             return;
+        }
+
         float t = max(0.0, tBox.x);
         
         // --- TEMPORAL REPROJECTION HINT ---
@@ -290,12 +310,18 @@ void main() {
             t = max(t, hintT - 0.1);
         }
 
+        // Precompute invariants
+        float a = u_bendAngle * 0.01745329;
+        vec2 bendSC = vec2(sin(a), cos(a));
+        float invK = 1.0 / max(u_bendAmount, 0.0001);
+        mat3 secRotMat = rotZ(u_secondaryRotation.z) * rotY(u_secondaryRotation.y) * rotX(u_secondaryRotation.x);
+
         // Pre-pass uses lower steps and higher epsilon
         const int PRE_STEPS = 20; 
         const float PRE_EPS = 0.02;
         for(int i=0; i<PRE_STEPS; i++) {
             vec3 p = ro_l + rd * t;
-            float d = map(p, u_boxSize, u_borderRadius);
+            float d = map(p, u_boxSize, u_borderRadius, bendSC, invK, secRotMat);
             if(d < PRE_EPS) { resT = t; break; }
             t += d * 1.5; // Aggressive stepping for pre-pass
             if(t > tBox.y) break;

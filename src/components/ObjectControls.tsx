@@ -92,11 +92,6 @@ export const ObjectControls = () => {
                     value: 0.5, min: 0, max: 1, step: 0.1,
                     onChange: objectOnChange('ease', updateObject),
                 },
-                timeNoise: {
-                    value: 0.5, min: 0, max: 2, step: 0.05,
-                    label: 'Timing Noise',
-                    onChange: objectOnChange('timeNoise', updateObject),
-                },
                 layerDelay: {
                     value: 0.02, min: 0.001, max: 0.1, step: 0.001,
                     label: 'Layer Delay',
@@ -231,7 +226,6 @@ export const ObjectControls = () => {
             color1: obj.color1,
             color2: obj.color2,
             rimColor: obj.rimColor,
-            timeNoise: obj.timeNoise,
             bendAmount: obj.bendAmount,
             bendAngle: obj.bendAngle,
             bendAxis: obj.bendAxis,

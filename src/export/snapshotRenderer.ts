@@ -122,7 +122,7 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
 
     // Setup UBOs
     const sceneData = new Float32Array(24);
-    const objectData = new Float32Array(96);
+    const objectData = new Float32Array(112); // Task Tier 3: increased for boundingRadius
     const objectDataInt = new Int32Array(objectData.buffer);
 
     let sceneUbo = null;
@@ -324,42 +324,61 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
             objectData[40] = obj.ease;
             objectData[41] = obj.numLines;
             objectData[42] = 0; // morphFactor
-            objectData[43] = obj.timeNoise;
+            // objectData[43] = obj.timeNoise; // Removed
+            objectData[43] = obj.svgExtrusionDepth;
+            objectData[44] = 32; // SDF_SPREAD
+            objectData[45] = svgSdfResolution;
+            objectData[46] = obj.bendAmount;
 
-            objectData[44] = obj.svgExtrusionDepth;
-            objectData[45] = 32; // SDF_SPREAD
-            objectData[46] = svgSdfResolution;
-            objectData[47] = obj.bendAmount;
+            objectData[47] = obj.bendAngle;
+            objectData[48] = obj.bendOffset;
+            objectData[49] = obj.bendLimit;
+            objectData[50] = obj.rimIntensity;
 
-            objectData[48] = obj.bendAngle;
-            objectData[49] = obj.bendOffset;
-            objectData[50] = obj.bendLimit;
-            objectData[51] = obj.rimIntensity;
+            objectData[51] = obj.rimPower;
+            objectData[52] = obj.wireOpacity;
+            objectData[53] = obj.wireIntensity;
+            objectData[54] = obj.layerDelay;
 
-            objectData[52] = obj.rimPower;
-            objectData[53] = obj.wireOpacity;
-            objectData[54] = obj.wireIntensity;
-            objectData[55] = obj.layerDelay;
-
-            objectData[56] = obj.torusThickness;
-            objectData[57] = obj.lineBrightness;
-            objectData[58] = obj.compositeSmoothness;
+            objectData[55] = obj.torusThickness;
+            objectData[56] = obj.lineBrightness;
+            objectData[57] = obj.compositeSmoothness;
 
             // Pre-resolved integer enums
-            objectDataInt[59] = obj._shapeType;
-            objectDataInt[60] = obj._shapeType; // shapeTypeNext
-            objectDataInt[61] = obj._orientType;
+            objectDataInt[58] = obj._shapeType; // Was 59
+            objectDataInt[59] = obj._shapeType; // shapeTypeNext // Was 60
+            objectDataInt[60] = obj._orientType; // Was 61
 
             const needsSvg = obj.shapeType === 'SVG';
-            objectDataInt[62] = (needsSvg && svgSdfReady && svgSdfTexture) ? 1 : 0;
-            objectDataInt[63] = obj._bendAxis;
-            objectDataInt[64] = obj._compositeMode;
-            objectDataInt[65] = obj._secondaryShapeType;
-            objectDataInt[66] = obj.enableBackface ? 1 : 0;
+            objectDataInt[61] = (needsSvg && svgSdfReady && svgSdfTexture) ? 1 : 0; // Was 62
+            objectDataInt[62] = obj._bendAxis; // Was 63
+            objectDataInt[63] = obj._compositeMode; // Was 64
+            objectDataInt[64] = obj._secondaryShapeType; // Was 65
+            objectDataInt[65] = obj.enableBackface ? 1 : 0; // Was 66
+
+            // Adaptive Step Count (P2 Optimization)
+            const camPos = [sceneData[4], sceneData[5], sceneData[6]];
+            const objPos = [obj.position.x, obj.position.y, obj.position.z];
+            const dist = Math.sqrt(
+                (camPos[0] - objPos[0])**2 + 
+                (camPos[1] - objPos[1])**2 + 
+                (camPos[2] - objPos[2])**2
+            );
+            
+            const baseSteps = 64; // match #define in standalone.html.ts
+            const baseBackSteps = 32;
+            const minSteps = 16;
+            
+            const complexity = (obj.compositeMode !== 'None' || obj.morphFactor > 0.01) ? 1.5 : 1.0;
+            const maxSteps = Math.max(minSteps, Math.floor(baseSteps / (1.0 + Math.max(0, dist - 10.0) * 0.05 * complexity)));
+            const maxBackSteps = Math.max(minSteps, Math.floor(baseBackSteps / (1.0 + Math.max(0, dist - 10.0) * 0.05 * complexity)));
+
+            objectDataInt[84] = maxSteps;
+            objectDataInt[85] = maxBackSteps;
 
             // Task 7 & 13: Adaptive margin and combined bounds
             const margin = (Math.abs(obj.bendAmount) < 0.05 && (obj.compositeMode === 'None' || obj._compositeMode === 0)) ? 1.2 : 2.0;
-            objectData[67] = margin;
+            objectData[66] = margin; // Was 67
 
             let rbX = obj.dimensions.x, rbY = obj.dimensions.y, rbZ = obj.dimensions.z;
             if (obj._compositeMode !== 0) {
@@ -392,6 +411,11 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
             objectData[68] = rbX;
             objectData[69] = rbY;
             objectData[70] = rbZ;
+
+            // Bounding Volume Early-Out (Tier 3 Optimization)
+            const bendFactor = 1.0 + Math.abs(obj.bendAmount) * 2.5;
+            const diagonal = Math.sqrt(rbX * rbX + rbY * rbY + rbZ * rbZ) + obj.borderRadius;
+            objectData[71] = diagonal * margin * bendFactor * 1.5;
 
             if (objectUbo) {
                 gl.bindBuffer(gl.UNIFORM_BUFFER, objectUbo);

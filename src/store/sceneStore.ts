@@ -71,7 +71,6 @@ const INITIAL_OBJECT: SceneObject = {
     color1: '#db5a00',
     color2: '#454545',
     rimColor: '#101010',
-    timeNoise: 0,
     bendAmount: 0,
     bendAngle: 0,
     bendAxis: 'X',
@@ -176,8 +175,6 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
                 speed: source.speed,
                 longevity: source.longevity,
                 ease: source.ease,
-                timeNoise: source.timeNoise,
-
             };
         }
 
@@ -262,7 +259,6 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
             speed: baseObj.speed,
             longevity: baseObj.longevity,
             ease: baseObj.ease,
-            timeNoise: baseObj.timeNoise,
             svgExtrusionDepth: baseObj.svgExtrusionDepth,
             rimIntensity: baseObj.rimIntensity,
             rimPower: baseObj.rimPower,
@@ -281,7 +277,6 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
             speed: 0.8,
             longevity: 0.6,
             ease: 0.5,
-            timeNoise: 0.5,
             svgExtrusionDepth: 0.5,
             rimIntensity: 0.4,
             rimPower: 3.0,

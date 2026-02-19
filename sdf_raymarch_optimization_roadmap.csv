@@ -1,0 +1,17 @@
+Tier,Priority Order,Optimization,Description,Expected Gain,Implementation Complexity
+Tier 1,1,Reduce Raymarch Iterations,Lower front steps (64→32–40) and remove back pass if possible,30–50%,Low
+Tier 1,2,Increase Surface Hit Threshold,Relax hit epsilon (0.001→0.002–0.004) to avoid micro-stepping,10–25%,Low
+Tier 1,3,Disable 3D Noise / Wobble,Remove per-step procedural noise inside ray loop,20–35%,Done
+Tier 2,4,Simplify map() Function,"Reduce CSG layers, smooth unions, branching, transforms",High (varies),Medium
+Tier 2,5,Adaptive Ray Step Count,Adjust max steps based on camera distance or bounding test,20–60%,Medium
+Tier 2,6,Cheaper Normal Estimation,Use 3-tap gradient or approximate normals,10–20%,Medium
+Tier 2,7,Remove Chromatic Aberration Multipass, Completely remove any traces of the feature,Up to 3x shading reduction,Low
+Tier 3,8,Bounding Volume Early-Out,Ray–sphere/box test before SDF evaluation,High (scene dependent),Medium
+Tier 3,9,Hierarchical Distance Fields,Use coarse SDF before full map() evaluation,High,High
+Tier 3,10,Move Static Work Outside Loop,Precompute invariant transforms and parameters,Moderate,Medium
+Tier 3,11,Remove Procedural Noise,Completely remove procedural noise,Moderate–High,Medium
+Tier 3,12,Compile-Time Feature Flags,Use #define variants instead of dynamic branching,Moderate,Medium
+Tier 4,13,Temporal Reprojection,Reuse previous frame results to reduce per-frame steps,High,High
+Tier 4,14,Foveated Rendering,Higher resolution near focus area only,Moderate–High,High
+Tier 4,15,Checkerboard Rendering,Render half pixels per frame and reconstruct,Moderate–High,High
+Tier 4,16,Progressive Refinement,Low step count during motion; increase when static,Moderate–High,Medium

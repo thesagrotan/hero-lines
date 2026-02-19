@@ -23,7 +23,6 @@ export function createDefaultObject(id: string, name: string): SceneObject {
         color1: '#db5a00',
         color2: '#454545',
         rimColor: '#101010',
-        timeNoise: 0.5,
         bendAmount: 0,
         bendAngle: 0,
         bendAxis: 'Y',

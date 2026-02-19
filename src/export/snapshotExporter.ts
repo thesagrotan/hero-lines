@@ -49,7 +49,6 @@ function snapshotObjects(objects: SceneObject[]) {
                 color1: hexToRgbArray(o.color1),
                 color2: hexToRgbArray(o.color2),
                 rimColor: hexToRgbArray(o.rimColor),
-                timeNoise: o.timeNoise,
                 svgExtrusionDepth: o.svgExtrusionDepth,
                 rimIntensity: o.rimIntensity,
                 rimPower: o.rimPower,

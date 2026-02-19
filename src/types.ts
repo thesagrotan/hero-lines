@@ -32,7 +32,6 @@ export interface SceneObject {
     color1: string;
     color2: string;
     rimColor: string;
-    timeNoise: number;
     svgData?: SvgData;
     svgExtrusionDepth: number;
     rimIntensity: number;

@@ -20,7 +20,7 @@ export class WebGLRenderer {
     private prepassResolutionScale = 0.5;
 
     private sceneData = new Float32Array(24); // 96 bytes (added 12 floats for previous state)
-    private objectData = new Float32Array(96); // 384 bytes (Task 13: added renderBoxSize and margin)
+    private objectData = new Float32Array(112); // Task 13: added renderBoxSize and margin, Task Tier 3: added boundingRadius
     private objectDataInt = new Int32Array(this.objectData.buffer);
 
     private prevCamPos = new Float32Array(3);
@@ -139,8 +139,9 @@ export class WebGLRenderer {
         if (type === this.gl.FRAGMENT_SHADER) {
             finalSource = source.replace('#version 300 es', `#version 300 es
 #define MAX_STEPS 40
+#define MIN_STEPS 16
 #define MAX_BACK_STEPS 16
-#define HIT_EPS 0.005
+#define HIT_EPS 0.008
 #define CHEAP_NORMALS
 #define SIMPLE_BACKFACE_NORMALS`);
         }
@@ -355,42 +356,41 @@ export class WebGLRenderer {
         this.objectData[40] = obj.ease;
         this.objectData[41] = obj.numLines;
         this.objectData[42] = obj.morphFactor;
-        this.objectData[43] = obj.timeNoise;
 
-        this.objectData[44] = obj.svgExtrusionDepth ?? 0.5;
-        this.objectData[45] = SDF_SPREAD;
-        this.objectData[46] = this.svgSdfResolution;
-        this.objectData[47] = obj.bendAmount;
+        this.objectData[43] = obj.svgExtrusionDepth ?? 0.5;
+        this.objectData[44] = SDF_SPREAD;
+        this.objectData[45] = this.svgSdfResolution;
+        this.objectData[46] = obj.bendAmount;
 
-        this.objectData[48] = obj.bendAngle;
-        this.objectData[49] = obj.bendOffset;
-        this.objectData[50] = obj.bendLimit;
-        this.objectData[51] = obj.rimIntensity ?? 0.4;
+        this.objectData[47] = obj.bendAngle;
+        this.objectData[48] = obj.bendOffset;
+        this.objectData[49] = obj.bendLimit;
+        this.objectData[50] = obj.rimIntensity ?? 0.4;
 
-        this.objectData[52] = obj.rimPower ?? 3.0;
-        this.objectData[53] = obj.wireOpacity ?? 0.1;
-        this.objectData[54] = obj.wireIntensity ?? 0.1;
-        this.objectData[55] = obj.layerDelay ?? 0.02;
+        this.objectData[51] = obj.rimPower ?? 3.0;
+        this.objectData[52] = obj.wireOpacity ?? 0.1;
+        this.objectData[53] = obj.wireIntensity ?? 0.1;
+        this.objectData[54] = obj.layerDelay ?? 0.02;
 
-        this.objectData[56] = obj.torusThickness ?? 0.2;
-        this.objectData[57] = obj.lineBrightness ?? 2.5;
-        this.objectData[58] = obj.compositeSmoothness ?? 0.1;
+        this.objectData[55] = obj.torusThickness ?? 0.2;
+        this.objectData[56] = obj.lineBrightness ?? 2.5;
+        this.objectData[57] = obj.compositeSmoothness ?? 0.1;
 
         // Ints (using the int32 view on the same buffer)
-        this.objectDataInt[59] = WebGLRenderer.SHAPE_MAP[obj.shapeType] ?? 0;
-        this.objectDataInt[60] = WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0;
-        this.objectDataInt[61] = WebGLRenderer.ORIENT_MAP[obj.orientation] ?? 0;
+        this.objectDataInt[58] = WebGLRenderer.SHAPE_MAP[obj.shapeType] ?? 0;
+        this.objectDataInt[59] = WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0;
+        this.objectDataInt[60] = WebGLRenderer.ORIENT_MAP[obj.orientation] ?? 0;
 
         const needsSvg = obj.shapeType === 'SVG' || obj.shapeTypeNext === 'SVG';
-        this.objectDataInt[62] = (needsSvg && this.svgSdfTexture) ? 1 : 0;
-        this.objectDataInt[63] = WebGLRenderer.BEND_AXIS_MAP[obj.bendAxis] ?? 1;
-        this.objectDataInt[64] = WebGLRenderer.COMPOSITE_MAP[obj.compositeMode] ?? 0;
-        this.objectDataInt[65] = WebGLRenderer.SHAPE_MAP[obj.secondaryShapeType] ?? 1;
-        this.objectDataInt[66] = obj.enableBackface ? 1 : 0;
+        this.objectDataInt[61] = (needsSvg && this.svgSdfTexture) ? 1 : 0;
+        this.objectDataInt[62] = WebGLRenderer.BEND_AXIS_MAP[obj.bendAxis] ?? 1;
+        this.objectDataInt[63] = WebGLRenderer.COMPOSITE_MAP[obj.compositeMode] ?? 0;
+        this.objectDataInt[64] = WebGLRenderer.SHAPE_MAP[obj.secondaryShapeType] ?? 1;
+        this.objectDataInt[65] = obj.enableBackface ? 1 : 0;
 
         // Task 13: Calculate combined bounding box for CSG shapes
         const margin = (Math.abs(obj.bendAmount) < 0.05 && obj.compositeMode === 'None') ? 1.2 : 2.0;
-        this.objectData[67] = margin;
+        this.objectData[66] = margin;
 
         let rbX = obj.dimensions.x, rbY = obj.dimensions.y, rbZ = obj.dimensions.z;
         if (obj.compositeMode !== 'None') {
@@ -413,6 +413,14 @@ export class WebGLRenderer {
         this.objectData[68] = rbX;
         this.objectData[69] = rbY;
         this.objectData[70] = rbZ;
+
+        // Bounding Volume Early-Out (Tier 3 Optimization)
+        // Calculate a bounding sphere radius that encompasses the whole object including secondary parts and bending
+        // Use the diagonal length (L2 norm) instead of just the max dimension to avoid corner clipping
+        // Increased safety margin significantly to resolve user-reported cropping
+        const bendFactor = 1.0 + Math.abs(obj.bendAmount) * 2.5;
+        const diagonal = Math.sqrt(rbX * rbX + rbY * rbY + rbZ * rbZ) + obj.borderRadius;
+        this.objectData[71] = diagonal * margin * bendFactor * 1.5; // Added extra 1.5x safety multiplier
 
         // Previous Object State (Indices 72-83)
         const prevState = this.prevObjStates.get(obj.id);
@@ -440,6 +448,26 @@ export class WebGLRenderer {
             this.objectData[81] = obj.rotation.y * DEG_TO_RAD;
             this.objectData[82] = obj.rotation.z * DEG_TO_RAD;
         }
+
+        // Adaptive Step Count (P2 Optimization)
+        const camPos = this.sceneData.subarray(4, 7);
+        const objPos = [obj.position.x, obj.position.y, obj.position.z];
+        const dist = Math.sqrt(
+            (camPos[0] - objPos[0]) ** 2 +
+            (camPos[1] - objPos[1]) ** 2 +
+            (camPos[2] - objPos[2]) ** 2
+        );
+
+        const baseSteps = 40; // match #define in createShader
+        const baseBackSteps = 16;
+        const minSteps = 12;
+
+        const complexity = (obj.compositeMode !== 'None' || obj.morphFactor > 0.01) ? 1.5 : 1.0;
+        const maxSteps = Math.max(minSteps, Math.floor(baseSteps / (1.0 + Math.max(0, dist - 5.0) * 0.05 * complexity)));
+        const maxBackSteps = Math.max(minSteps, Math.floor(baseBackSteps / (1.0 + Math.max(0, dist - 5.0) * 0.05 * complexity)));
+
+        this.objectDataInt[84] = maxSteps;
+        this.objectDataInt[85] = maxBackSteps;
 
         this.prevObjStates.set(obj.id, {
             position: { ...obj.position },

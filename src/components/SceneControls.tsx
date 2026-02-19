@@ -18,7 +18,7 @@ export const SceneControls = () => {
         },
         zoom: {
             value: scene.zoom,
-            min: 0.1, max: 2.0, step: 0.05,
+            min: 0.01, max: 10.0, step: 0.05,
             onChange: (v: any) => {
                 if (v !== useSceneStore.getState().scene.zoom) setScene({ zoom: v });
             }
