@@ -41,7 +41,10 @@ const SNAPSHOT = ${JSON.stringify(snapshot)};
 const VS_SOURCE = ${JSON.stringify(vsSource)};
 
 // ── Fragment Shader ──
-const FS_SOURCE = ${JSON.stringify(fsSource)};
+const FS_SOURCE = fsSource.replace('#version 300 es', \`#version 300 es
+#define MAX_STEPS 64
+#define MAX_BACK_STEPS 32
+#define HIT_EPS 0.001\`);
 
 // ── SVG SDF Module ──
 ${svgSdfCode}

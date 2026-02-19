@@ -94,10 +94,9 @@ function calculateScissorRect(scene, obj, width, height) {
     }
 
     const pad = 10;
-    const chromPad = Math.abs(obj.chromaticAberration || 0) * height;
-    const x = Math.max(0, Math.floor(minX - pad - chromPad));
+    const x = Math.max(0, Math.floor(minX - pad));
     const y = Math.max(0, Math.floor(minY - pad));
-    const w = Math.min(width,  Math.ceil(maxX + pad + chromPad)) - x;
+    const w = Math.min(width,  Math.ceil(maxX + pad)) - x;
     const h = Math.min(height, Math.ceil(maxY + pad)) - y;
     return { x, y, w, h };
 }
@@ -122,7 +121,7 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
 
     // Setup UBOs
     const sceneData = new Float32Array(12);
-    const objectData = new Float32Array(76);
+    const objectData = new Float32Array(68);
     const objectDataInt = new Int32Array(objectData.buffer);
 
     let sceneUbo = null;
@@ -236,13 +235,6 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
             layerDelay:          o.layerDelay          || 0.02,
             torusThickness:      o.torusThickness      || 0.2,
             lineBrightness:      o.lineBrightness      || 2.5,
-            wobbleAmount:        o.wobbleAmount        || 0,
-            wobbleSpeed:         o.wobbleSpeed         || 1,
-            wobbleScale:         o.wobbleScale         || 2,
-            chromaticAberration: o.chromaticAberration || 0,
-            pulseIntensity:      o.pulseIntensity      || 0,
-            pulseSpeed:          o.pulseSpeed          || 1,
-            scanlineIntensity:   o.scanlineIntensity   || 0,
             compositeSmoothness: o.compositeSmoothness || 0.1,
             // Pre-resolved integer enum values
             _shapeType:          SHAPE_MAP[o.shapeType]          || 0,
@@ -349,27 +341,18 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
 
             objectData[56] = obj.torusThickness;
             objectData[57] = obj.lineBrightness;
-            objectData[58] = obj.wobbleAmount;
-            objectData[59] = obj.wobbleSpeed;
-
-            objectData[60] = obj.wobbleScale;
-            objectData[61] = obj.chromaticAberration;
-            objectData[62] = obj.pulseIntensity;
-            objectData[63] = obj.pulseSpeed;
-
-            objectData[64] = obj.scanlineIntensity;
-            objectData[65] = obj.compositeSmoothness;
+            objectData[58] = obj.compositeSmoothness;
 
             // Pre-resolved integer enums
-            objectDataInt[66] = obj._shapeType;
-            objectDataInt[67] = obj._shapeType; // shapeTypeNext
-            objectDataInt[68] = obj._orientType;
+            objectDataInt[59] = obj._shapeType;
+            objectDataInt[60] = obj._shapeType; // shapeTypeNext
+            objectDataInt[61] = obj._orientType;
 
             const needsSvg = obj.shapeType === 'SVG';
-            objectDataInt[69] = (needsSvg && svgSdfReady && svgSdfTexture) ? 1 : 0;
-            objectDataInt[70] = obj._bendAxis;
-            objectDataInt[71] = obj._compositeMode;
-            objectDataInt[72] = obj._secondaryShapeType;
+            objectDataInt[62] = (needsSvg && svgSdfReady && svgSdfTexture) ? 1 : 0;
+            objectDataInt[63] = obj._bendAxis;
+            objectDataInt[64] = obj._compositeMode;
+            objectDataInt[65] = obj._secondaryShapeType;
 
             if (objectUbo) {
                 gl.bindBuffer(gl.UNIFORM_BUFFER, objectUbo);

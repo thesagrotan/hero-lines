@@ -47,13 +47,7 @@ export interface SceneObject {
     bendAxis: 'X' | 'Y' | 'Z';
     bendOffset: number;
     bendLimit: number;
-    wobbleAmount: number;
-    wobbleSpeed: number;
-    wobbleScale: number;
-    chromaticAberration: number;
-    pulseIntensity: number;
-    pulseSpeed: number;
-    scanlineIntensity: number;
+
     // CSG Properties
     compositeMode: CompositeMode;
     secondaryShapeType: ShapeType;

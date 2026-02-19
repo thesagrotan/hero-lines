@@ -12,7 +12,7 @@ export class WebGLRenderer {
     private sceneUbo: WebGLBuffer;
     private objectUbo: WebGLBuffer;
     private sceneData = new Float32Array(12); // 48 bytes
-    private objectData = new Float32Array(76); // 304 bytes
+    private objectData = new Float32Array(68); // 272 bytes
     private objectDataInt = new Int32Array(this.objectData.buffer);
 
     private svgSdfTexture: WebGLTexture | null = null;
@@ -94,7 +94,14 @@ export class WebGLRenderer {
 
     private createShader(type: number, source: string): WebGLShader {
         const shader = this.gl.createShader(type)!;
-        this.gl.shaderSource(shader, source);
+        let finalSource = source;
+        if (type === this.gl.FRAGMENT_SHADER) {
+            finalSource = source.replace('#version 300 es', `#version 300 es
+#define MAX_STEPS 40
+#define MAX_BACK_STEPS 16
+#define HIT_EPS 0.005`);
+        }
+        this.gl.shaderSource(shader, finalSource);
         this.gl.compileShader(shader);
         if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
             const info = this.gl.getShaderInfoLog(shader);
@@ -240,27 +247,18 @@ export class WebGLRenderer {
 
             this.objectData[56] = obj.torusThickness ?? 0.2;
             this.objectData[57] = obj.lineBrightness ?? 2.5;
-            this.objectData[58] = obj.wobbleAmount ?? 0;
-            this.objectData[59] = obj.wobbleSpeed ?? 1;
-
-            this.objectData[60] = obj.wobbleScale ?? 2;
-            this.objectData[61] = obj.chromaticAberration ?? 0;
-            this.objectData[62] = obj.pulseIntensity ?? 0;
-            this.objectData[63] = obj.pulseSpeed ?? 1;
-
-            this.objectData[64] = obj.scanlineIntensity ?? 0;
-            this.objectData[65] = obj.compositeSmoothness ?? 0.1;
+            this.objectData[58] = obj.compositeSmoothness ?? 0.1;
 
             // Ints (using the int32 view on the same buffer)
-            this.objectDataInt[66] = WebGLRenderer.SHAPE_MAP[obj.shapeType] ?? 0;
-            this.objectDataInt[67] = WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0;
-            this.objectDataInt[68] = WebGLRenderer.ORIENT_MAP[obj.orientation] ?? 0;
+            this.objectDataInt[59] = WebGLRenderer.SHAPE_MAP[obj.shapeType] ?? 0;
+            this.objectDataInt[60] = WebGLRenderer.SHAPE_MAP[obj.shapeTypeNext] ?? 0;
+            this.objectDataInt[61] = WebGLRenderer.ORIENT_MAP[obj.orientation] ?? 0;
 
             const needsSvg = obj.shapeType === 'SVG' || obj.shapeTypeNext === 'SVG';
-            this.objectDataInt[69] = (needsSvg && this.svgSdfTexture) ? 1 : 0;
-            this.objectDataInt[70] = WebGLRenderer.BEND_AXIS_MAP[obj.bendAxis] ?? 1;
-            this.objectDataInt[71] = WebGLRenderer.COMPOSITE_MAP[obj.compositeMode] ?? 0;
-            this.objectDataInt[72] = WebGLRenderer.SHAPE_MAP[obj.secondaryShapeType] ?? 1;
+            this.objectDataInt[62] = (needsSvg && this.svgSdfTexture) ? 1 : 0;
+            this.objectDataInt[63] = WebGLRenderer.BEND_AXIS_MAP[obj.bendAxis] ?? 1;
+            this.objectDataInt[64] = WebGLRenderer.COMPOSITE_MAP[obj.compositeMode] ?? 0;
+            this.objectDataInt[65] = WebGLRenderer.SHAPE_MAP[obj.secondaryShapeType] ?? 1;
 
             gl.bindBuffer(gl.UNIFORM_BUFFER, this.objectUbo);
             gl.bufferSubData(gl.UNIFORM_BUFFER, 0, this.objectData);
@@ -371,15 +369,11 @@ export class WebGLRenderer {
         if (!someInFront) return { x: 0, y: 0, w: 0, h: 0 };
 
         // Clamp to screen and add an extra padding for safety
-        // Chromatic aberration shifts the red/blue channels horizontally in UV space.
-        // Shift in UV.x of 'u_chromaticAberration' corresponds to 'u_chromaticAberration * height' pixels.
         const pad = 10;
-        const chromAbb = obj.chromaticAberration ?? 0;
-        const chromPad = Math.abs(chromAbb) * height;
 
-        const x = Math.max(0, Math.floor(minX - pad - chromPad));
+        const x = Math.max(0, Math.floor(minX - pad));
         const y = Math.max(0, Math.floor(minY - pad));
-        const w = Math.min(width, Math.ceil(maxX + pad + chromPad)) - x;
+        const w = Math.min(width, Math.ceil(maxX + pad)) - x;
         const h = Math.min(height, Math.ceil(maxY + pad)) - y;
 
         return { x, y, w, h };

@@ -161,43 +161,7 @@ export const ObjectControls = () => {
                 },
             }, { collapsed: true }),
 
-            'Visual FX': folder({
-                wobbleAmount: {
-                    value: 0, min: 0, max: 0.5, step: 0.01,
-                    label: 'Wobble Amount',
-                    onChange: objectOnChange('wobbleAmount', updateObject),
-                },
-                wobbleSpeed: {
-                    value: 1, min: 0.1, max: 10, step: 0.1,
-                    label: 'Wobble Speed',
-                    onChange: objectOnChange('wobbleSpeed', updateObject),
-                },
-                wobbleScale: {
-                    value: 2, min: 0.1, max: 20, step: 0.1,
-                    label: 'Wobble Scale',
-                    onChange: objectOnChange('wobbleScale', updateObject),
-                },
-                chromaticAberration: {
-                    value: 0, min: 0, max: 0.05, step: 0.001,
-                    label: 'Chromatic Ab.',
-                    onChange: objectOnChange('chromaticAberration', updateObject),
-                },
-                pulseIntensity: {
-                    value: 0, min: 0, max: 0.5, step: 0.01,
-                    label: 'Pulse Intensity',
-                    onChange: objectOnChange('pulseIntensity', updateObject),
-                },
-                pulseSpeed: {
-                    value: 1, min: 0.1, max: 10, step: 0.1,
-                    label: 'Pulse Speed',
-                    onChange: objectOnChange('pulseSpeed', updateObject),
-                },
-                scanlineIntensity: {
-                    value: 0, min: 0, max: 1, step: 0.01,
-                    label: 'Scanlines',
-                    onChange: objectOnChange('scanlineIntensity', updateObject),
-                },
-            }, { collapsed: true }),
+
 
             'Composite': folder({
                 compositeMode: {
@@ -276,13 +240,7 @@ export const ObjectControls = () => {
             layerDelay: obj.layerDelay,
             torusThickness: obj.torusThickness,
             lineBrightness: obj.lineBrightness,
-            wobbleAmount: obj.wobbleAmount,
-            wobbleSpeed: obj.wobbleSpeed,
-            wobbleScale: obj.wobbleScale,
-            chromaticAberration: obj.chromaticAberration,
-            pulseIntensity: obj.pulseIntensity,
-            pulseSpeed: obj.pulseSpeed,
-            scanlineIntensity: obj.scanlineIntensity,
+
             compositeMode: obj.compositeMode,
             secondaryShapeType: obj.secondaryShapeType,
             secondaryPosition: obj.secondaryPosition,

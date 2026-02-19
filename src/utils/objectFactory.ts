@@ -37,13 +37,7 @@ export function createDefaultObject(id: string, name: string): SceneObject {
         layerDelay: 0.02,
         torusThickness: 0.2,
         lineBrightness: 2.5,
-        wobbleAmount: 0,
-        wobbleSpeed: 1,
-        wobbleScale: 2,
-        chromaticAberration: 0,
-        pulseIntensity: 0,
-        pulseSpeed: 1,
-        scanlineIntensity: 0,
+
         // CSG Properties
         compositeMode: 'None',
         secondaryShapeType: 'Sphere',

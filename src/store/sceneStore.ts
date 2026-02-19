@@ -85,13 +85,7 @@ const INITIAL_OBJECT: SceneObject = {
     layerDelay: 0.02,
     torusThickness: 0.2,
     lineBrightness: 2.5,
-    wobbleAmount: 0,
-    wobbleSpeed: 1,
-    wobbleScale: 2,
-    chromaticAberration: 0,
-    pulseIntensity: 0,
-    pulseSpeed: 1,
-    scanlineIntensity: 0,
+
     // CSG Properties
     compositeMode: 'None',
     secondaryShapeType: 'Sphere',
@@ -182,13 +176,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
                 longevity: source.longevity,
                 ease: source.ease,
                 timeNoise: source.timeNoise,
-                wobbleAmount: source.wobbleAmount,
-                wobbleSpeed: source.wobbleSpeed,
-                wobbleScale: source.wobbleScale,
-                chromaticAberration: source.chromaticAberration,
-                pulseIntensity: source.pulseIntensity,
-                pulseSpeed: source.pulseSpeed,
-                scanlineIntensity: source.scanlineIntensity,
+
             };
         }
 
@@ -282,13 +270,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
             layerDelay: baseObj.layerDelay,
             torusThickness: baseObj.torusThickness,
             lineBrightness: baseObj.lineBrightness,
-            wobbleAmount: baseObj.wobbleAmount,
-            wobbleSpeed: baseObj.wobbleSpeed,
-            wobbleScale: baseObj.wobbleScale,
-            chromaticAberration: baseObj.chromaticAberration,
-            pulseIntensity: baseObj.pulseIntensity,
-            pulseSpeed: baseObj.pulseSpeed,
-            scanlineIntensity: baseObj.scanlineIntensity,
+
         } : {
             color1: '#db5a00',
             color2: '#454545',
@@ -307,13 +289,7 @@ export const useSceneStore = create<SceneStore>((set, get) => ({
             layerDelay: 0.02,
             torusThickness: 0.2,
             lineBrightness: 2.5,
-            wobbleAmount: 0,
-            wobbleSpeed: 1,
-            wobbleScale: 2,
-            chromaticAberration: 0,
-            pulseIntensity: 0,
-            pulseSpeed: 1,
-            scanlineIntensity: 0,
+
         };
 
         // Use predefined device order for consistent feel
