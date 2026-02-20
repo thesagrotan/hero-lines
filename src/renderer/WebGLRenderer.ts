@@ -610,8 +610,8 @@ export class WebGLRenderer {
             const uvX = vec3.dot(v, right) / dist;
             const uvY = vec3.dot(v, up) / dist;
 
-            const px = (uvX * height) + 0.5 * width;
-            const py = (uvY * height) + 0.5 * height;
+            const px = (uvX * 0.5 * height) + 0.5 * width;
+            const py = (uvY * 0.5 * height) + 0.5 * height;
 
             minX = Math.min(minX, px);
             maxX = Math.max(maxX, px);

@@ -26,9 +26,9 @@ export function generateStandaloneHTML(snapshot: SnapshotData): string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hero Lines Snapshot</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:${snapshot.scene.bgColor}}
-canvas{display:block;width:100%;height:100%}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: ${snapshot.scene.bgColor}; }
+canvas { display: block; width: 100vw; height: 100vh; }
 </style>
 </head>
 <body>
@@ -42,6 +42,7 @@ const VS_SOURCE = ${JSON.stringify(vsSource)};
 
 // ── Fragment Shader ──
 const FS_SOURCE = ${JSON.stringify(fsSource.replace('#version 300 es', `#version 300 es
+#define EXPORT_MODE
 #define MAX_STEPS 48
 #define MIN_STEPS 16
 #define MAX_BACK_STEPS 24
@@ -60,8 +61,7 @@ ${getSnapshotRendererSource()}
     const renderer = initSnapshot(canvas, SNAPSHOT, VS_SOURCE, FS_SOURCE, ${svgSdfModuleRef}, SNAPSHOT.scene.resolutionScale || 0.75);
     if (!renderer) return;
 
-    const ro = new ResizeObserver(() => renderer.resize());
-    ro.observe(canvas);
+    window.addEventListener('resize', () => renderer.resize());
     renderer.start();
 })();
 </script>

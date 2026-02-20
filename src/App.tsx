@@ -16,13 +16,15 @@ export default function App() {
     return (
         <div className={`app-container ${theme}-theme`}>
             <RendererView />
-            <FPSCounter />
+            <div className="top-header">
+                <FPSCounter />
+                <DeviceBar />
+                <ExportPanel />
+            </div>
             <SceneControls />
             <ObjectControls />
             <SvgUpload />
-            <DeviceBar />
             <ObjectList />
-            <ExportPanel />
         </div>
     )
 }

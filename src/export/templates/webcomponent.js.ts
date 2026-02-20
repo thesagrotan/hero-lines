@@ -30,6 +30,7 @@ const VS_SOURCE = ${JSON.stringify(vsSource)};
 
 // ── Fragment Shader ──
 const FS_SOURCE = ${JSON.stringify(fsSource.replace('#version 300 es', `#version 300 es
+#define EXPORT_MODE
 #define MAX_STEPS 48
 #define MIN_STEPS 16
 #define MAX_BACK_STEPS 24
@@ -53,8 +54,8 @@ class HeroLinesSnapshot extends HTMLElement {
         const shadow = this.attachShadow({ mode: 'open' });
         shadow.innerHTML = \`
             <style>
-                :host { display: block; width: 100%; height: 100%; overflow: hidden; }
-                canvas { display: block; width: 100%; height: 100%; }
+                :host { display: block; position: relative; width: 100%; height: 100%; overflow: hidden; background: ${snapshot.scene.bgColor}; }
+                canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
             </style>
             <canvas></canvas>
         \`;
@@ -63,7 +64,7 @@ class HeroLinesSnapshot extends HTMLElement {
         if (!this._renderer) return;
 
         this._ro = new ResizeObserver(() => this._renderer.resize());
-        this._ro.observe(canvas);
+        this._ro.observe(this);
         this._renderer.start();
     }
 

@@ -250,7 +250,8 @@ vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxSize) {
 }
 
 void main() {
-    vec2 uv = (gl_FragCoord.xy * 2.0 - 0.5 * u_resolution) / u_resolution.y;
+    vec2 uv = (gl_FragCoord.xy / (u_resolution * 0.5)) * 2.0 - 1.0;
+    uv.x *= u_resolution.x / u_resolution.y;
     mat3 mI = transpose(rotZ(u_rot.z) * rotY(u_rot.y) * rotX(u_rot.x));
     vec3 ro_l = mI * (u_camPos - u_position);
     vec3 worldFwd = normalize(-u_camPos);

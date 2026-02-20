@@ -1,7 +1,4 @@
 .fps-counter {
-    position: absolute;
-    top: 20px;
-    left: 20px;
     padding: 8px 12px;
     background: var(--panel-bg);
     backdrop-filter: blur(10px);
@@ -14,6 +11,5 @@
     letter-spacing: 0.05em;
     pointer-events: none;
     box-shadow: 0 4px 30px var(--shadow-color);
-    z-index: 10;
     transition: all 0.3s ease;
 }

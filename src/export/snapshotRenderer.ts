@@ -12,6 +12,21 @@ const ORIENT_MAP = { Horizontal: 0, Vertical: 1, Depth: 2, Diagonal: 3 };
 const BEND_AXIS_MAP = { X: 0, Y: 1, Z: 2 };
 const COMPOSITE_MAP = { None: 0, Union: 1, Subtract: 2, Intersect: 3, SmoothUnion: 4 };
 
+// Math Helpers
+function mul3(A, B) {
+    const R = new Array(9);
+    for (let r = 0; r < 3; r++)
+        for (let c = 0; c < 3; c++)
+            R[r*3+c] = A[r*3+0]*B[0*3+c] + A[r*3+1]*B[1*3+c] + A[r*3+2]*B[2*3+c];
+    return R;
+}
+function mv(m, v) { return [m[0]*v[0]+m[1]*v[1]+m[2]*v[2], m[3]*v[0]+m[4]*v[1]+m[5]*v[2], m[6]*v[0]+m[7]*v[1]+m[8]*v[2]]; }
+function vadd(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+function sub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+function dot(a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+function norm(v) { const l = Math.sqrt(dot(v,v)); return [v[0]/l, v[1]/l, v[2]/l]; }
+function cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+
 function createShader(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
@@ -44,22 +59,9 @@ function calculateScissorRect(scene, obj, width, height) {
     const RZ = [cz,-sz,0, sz,cz,0, 0,0,1];
 
     // M = rotZ * rotY * rotX  (column-major 3x3 as flat array)
-    function mul3(A, B) {
-        const R = new Array(9);
-        for (let r = 0; r < 3; r++)
-            for (let c = 0; c < 3; c++)
-                R[r*3+c] = A[r*3+0]*B[0*3+c] + A[r*3+1]*B[1*3+c] + A[r*3+2]*B[2*3+c];
-        return R;
-    }
     const M = mul3(mul3(RZ, RY), RX);
     // mI = transpose(M)
     const mI = [M[0],M[3],M[6], M[1],M[4],M[7], M[2],M[5],M[8]];
-
-    function mv(m, v) { return [m[0]*v[0]+m[1]*v[1]+m[2]*v[2], m[3]*v[0]+m[4]*v[1]+m[5]*v[2], m[6]*v[0]+m[7]*v[1]+m[8]*v[2]]; }
-    function sub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
-    function dot(a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
-    function norm(v) { const l = Math.sqrt(dot(v,v)); return [v[0]/l, v[1]/l, v[2]/l]; }
-    function cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
 
     const ro_l = mv(mI, sub(camPos, [obj.position.x, obj.position.y, obj.position.z]));
 
@@ -86,8 +88,8 @@ function calculateScissorRect(scene, obj, width, height) {
         if (dist < 0.1) return null;
         const uvX = dot(v, right) / dist;
         const uvY = dot(v, up) / dist;
-        const px = uvX * height + 0.5 * width;
-        const py = uvY * height + 0.5 * height;
+        const px = (uvX * 0.5 * height) + 0.5 * width;
+        const py = (uvY * 0.5 * height) + 0.5 * height;
         if (px < minX) minX = px;
         if (px > maxX) maxX = px;
         if (py < minY) minY = py;
@@ -100,6 +102,14 @@ function calculateScissorRect(scene, obj, width, height) {
     const w = Math.min(width,  Math.ceil(maxX + pad)) - x;
     const h = Math.min(height, Math.ceil(maxY + pad)) - y;
     return { x, y, w, h };
+}
+
+function hexToRgb(hex) {
+    if (!hex) return [0,0,0];
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    return [r, g, b];
 }
 
 function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolutionScale) {
@@ -168,7 +178,7 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
 
     // Set program and clear color once — they never change
     gl.useProgram(program);
-    const bg = snapshot.scene.bgColorRgb;
+    const bg = hexToRgb(snapshot.scene.bgColor);
     gl.clearColor(bg[0], bg[1], bg[2], 1.0);
 
     // SVG SDF texture state
@@ -412,16 +422,7 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
                 const RX = [1,0,0, 0,cx,-sx, 0,sx,cx];
                 const RY = [cy,0,sy, 0,1,0, -sy,0,cy];
                 const RZ = [cz,-sz,0, sz,cz,0, 0,0,1];
-                function mul3(A, B) {
-                    const R = new Array(9);
-                    for (let r = 0; r < 3; r++)
-                        for (let c = 0; c < 3; c++)
-                            R[r*3+c] = A[r*3+0]*B[0*3+c] + A[r*3+1]*B[1*3+c] + A[r*3+2]*B[2*3+c];
-                    return R;
-                }
                 const rot = mul3(mul3(RZ, RY), RX);
-                function mv(m, v) { return [m[0]*v[0]+m[1]*v[1]+m[2]*v[2], m[3]*v[0]+m[4]*v[1]+m[5]*v[2], m[6]*v[0]+m[7]*v[1]+m[8]*v[2]]; }
-                function vadd(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
                 const sd = [obj._sdx, obj._sdy, obj._sdz];
                 const sp = [obj._spx, obj._spy, obj._spz];
                 const signs = [-1, 1];
@@ -468,10 +469,11 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
     }
 
     function resize() {
-        const rect = canvas.getBoundingClientRect();
+        const width = canvas.clientWidth || window.innerWidth;
+        const height = canvas.clientHeight || window.innerHeight;
         const dpr = (window.devicePixelRatio || 1) * resolutionScale;
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
         gl.viewport(0, 0, canvas.width, canvas.height);
     }
 
