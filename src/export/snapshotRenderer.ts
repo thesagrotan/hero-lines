@@ -88,8 +88,9 @@ function calculateScissorRect(scene, obj, width, height) {
         if (dist < 0.1) return null;
         const uvX = dot(v, right) / dist;
         const uvY = dot(v, up) / dist;
-        const px = (uvX * 0.5 * height) + 0.5 * width;
-        const py = (uvY * 0.5 * height) + 0.5 * height;
+        const diag = Math.sqrt(width * width + height * height) * 0.35355;
+        const px = uvX * diag + 0.5 * width;
+        const py = uvY * diag + 0.5 * height;
         if (px < minX) minX = px;
         if (px > maxX) maxX = px;
         if (py < minY) minY = py;
@@ -453,13 +454,8 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
                 if (svgTexLoc) gl.uniform1i(svgTexLoc, 0);
             }
 
-            // Scissor test: skip pixels outside the object's screen-space bounding rect
-            const scissor = calculateScissorRect(scene, obj, gl.canvas.width, gl.canvas.height);
-            if (scissor && scissor.w > 0 && scissor.h > 0) {
-                gl.scissor(scissor.x, scissor.y, scissor.w, scissor.h);
-            } else {
-                gl.scissor(0, 0, gl.canvas.width, gl.canvas.height);
-            }
+            // Scissor test temporarily disabled for debugging bounds logic
+            gl.scissor(0, 0, gl.canvas.width, gl.canvas.height);
 
             gl.drawArrays(gl.TRIANGLES, 0, 6);
         });
