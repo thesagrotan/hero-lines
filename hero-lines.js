@@ -1,18 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hero Lines Snapshot</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { width: 100%; height: 100%; overflow: hidden; background: #1d1d1d; }
-canvas { display: block; width: 100vw; height: 100vh; }
-</style>
-</head>
-<body>
-<canvas id="c"></canvas>
-<script>
+(function() {
+"use strict";
+
 // ── Snapshot Data ──
 const SNAPSHOT = {"scene":{"camera":{"x":5,"y":4.5,"z":8},"zoom":1,"bgColor":"#1d1d1d","bgColorRgb":[0.11372549019607843,0.11372549019607843,0.11372549019607843],"resolutionScale":0.75},"objects":[{"visible":true,"position":{"x":0,"y":0,"z":0},"dimensions":{"x":2.5,"y":0.8,"z":1.2},"rotation":{"x":0,"y":0,"z":0},"shapeType":"Box","borderRadius":0.1,"orientation":"Horizontal","numLines":30,"thickness":0.01,"speed":0.1,"longevity":0.4,"ease":0.5,"color1":[0.8588235294117647,0.35294117647058826,0],"color2":[0.27058823529411763,0.27058823529411763,0.27058823529411763],"rimColor":[0.06274509803921569,0.06274509803921569,0.06274509803921569],"svgExtrusionDepth":0.5,"rimIntensity":0.4,"rimPower":3,"wireOpacity":0.1,"wireIntensity":0.1,"layerDelay":0.02,"torusThickness":0.2,"lineBrightness":2.5,"bendAmount":0,"bendAngle":0,"bendAxis":"X","bendOffset":0,"bendLimit":1,"compositeMode":"None","secondaryShapeType":"Sphere","secondaryPosition":{"x":0,"y":0,"z":0},"secondaryRotation":{"x":0,"y":0,"z":0},"secondaryDimensions":{"x":0.5,"y":0.5,"z":0.5},"compositeSmoothness":0.1,"enableBackface":true}]};
 
@@ -513,15 +501,46 @@ function initSnapshot(canvas, snapshot, vsSource, fsSource, svgSdfModule, resolu
 }
 
 
-// ── Boot ──
-(function() {
-    const canvas = document.getElementById('c');
-    const renderer = initSnapshot(canvas, SNAPSHOT, VS_SOURCE, FS_SOURCE, null, SNAPSHOT.scene.resolutionScale || 0.75);
-    if (!renderer) return;
+class HeroLinesSnapshot extends HTMLElement {
+    constructor() {
+        super();
+        this._renderer = null;
+        this._ro = null;
+    }
 
-    window.addEventListener('resize', () => renderer.resize());
-    renderer.start();
+    connectedCallback() {
+        const shadow = this.attachShadow({ mode: 'open' });
+        shadow.innerHTML = `
+            <style>
+                :host { display: block; position: relative; width: 100%; height: 100%; overflow: hidden; background: #1d1d1d; }
+                canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+            </style>
+            <canvas></canvas>
+        `;
+        const canvas = shadow.querySelector('canvas');
+        this._renderer = initSnapshot(canvas, SNAPSHOT, VS_SOURCE, FS_SOURCE, null, SNAPSHOT.scene.resolutionScale || 0.75);
+        if (!this._renderer) return;
+
+        this._ro = new ResizeObserver(() => this._renderer.resize());
+        this._ro.observe(this);
+        this._renderer.start();
+    }
+
+    disconnectedCallback() {
+        if (this._ro) this._ro.disconnect();
+        if (this._renderer) this._renderer.dispose();
+    }
+
+    static get observedAttributes() { return ['paused']; }
+
+    attributeChangedCallback(name, _old, val) {
+        if (name === 'paused' && this._renderer) {
+            this._renderer.paused = (val !== null);
+        }
+    }
+}
+
+if (!customElements.get('hero-lines-snapshot')) {
+    customElements.define('hero-lines-snapshot', HeroLinesSnapshot);
+}
 })();
-</script>
-</body>
-</html>
